@@ -54,6 +54,8 @@ export interface SiteConfig<O = Record<string, unknown>> {
   workers: string[];
   /** Offer a light / dark / system choice in the Accessibility dialog (site.json "themeSwitch"). */
   themeSwitch: boolean;
+  /** "Support the author" link (site.json "support"), null when the app has none. */
+  support: { url: string } | null;
 }
 
 /** public/version.json, read by single files to detect updates. */

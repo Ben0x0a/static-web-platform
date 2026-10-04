@@ -27,6 +27,7 @@ import { createStore, type PrefixedStore } from "./services/storage.ts";
 import { mountActions } from "./ui/actions.ts";
 import { mountDialogs, type ShareItem } from "./ui/dialogs.ts";
 import { byId } from "./ui/dom.ts";
+import { createSupportLink } from "./ui/support.ts";
 
 export interface Platform<O = Record<string, unknown>> {
   site: SiteConfig<O>;
@@ -43,6 +44,11 @@ export interface Platform<O = Record<string, unknown>> {
   shortcuts: Shortcuts;
   /** Optional files of the hosted site (null / unavailable in the single file). */
   assets: Assets;
+  /**
+   * A new "support the author" link (site.json "support"), or null when the app
+   * has none. Place it where you want; it must stay visible (the gate checks).
+   */
+  supportLink(): HTMLAnchorElement | null;
   /** Start a Web Worker declared in site.json "workers" (works in both outputs). */
   worker(name: string): Worker;
   share: {
@@ -111,5 +117,6 @@ export function startPlatform<O = Record<string, unknown>>(options: StartOptions
   };
 
   return { site, t: i18n.t, store, sessionStore, net, consent, setStatus: actions.setStatus, share,
-           assets: createAssets(site), worker: name => startWorker(site, name), shortcuts };
+           assets: createAssets(site), worker: name => startWorker(site, name), shortcuts,
+           supportLink: () => (site.support ? createSupportLink(site.support.url, i18n) : null) };
 }

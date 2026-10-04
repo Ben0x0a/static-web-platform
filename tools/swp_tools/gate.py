@@ -419,6 +419,16 @@ def run_steps(page: Page, steps: list[dict], watch: Watch) -> list[str]:
     return typed
 
 
+def check_support_link(page: Page, report: Report, label: str) -> None:
+    """When site.json declares "support", the link must be on the page and visible."""
+    url = page.evaluate("window.__SWP_SITE__?.support?.url ?? null")
+    if not url:
+        return
+    visible = page.evaluate("""url => [...document.querySelectorAll('a')].some(a => a.href === url
+        && a.checkVisibility({ visibilityProperty: true }) && a.getBoundingClientRect().width > 0)""", url)
+    report.check(visible, f"{label}: support link visible", f"no visible link to {url} — place platform.supportLink()")
+
+
 def check_screen(page: Page, watch: Watch, axe_src: str, report: Report, label: str, phone: bool,
                  typed: list[str]) -> None:
     run_axe(page, axe_src, report, label)
@@ -463,6 +473,7 @@ def check_single_file(page: Page, context, site_dir: pathlib.Path, origin: str, 
     settle_consent(local, watch, axe_src, report, "single file")
     check_declarations(local, report, "single file", allowed_extra={(origin, "connect-src")})
     check_screen(local, watch, axe_src, report, "single file desktop", phone=False, typed=[])
+    check_support_link(local, report, "single file")
     local.set_viewport_size(PHONE)
     check_phone_rules(local, report, "single file phone")
     local.set_viewport_size(DESKTOP)
@@ -526,6 +537,7 @@ def run_gate(root: pathlib.Path) -> Report:
                 report.check("'unsafe-inline'" not in csp.get("script-src", ["'unsafe-inline'"]),
                              "site: CSP forbids inline script", f"script-src {' '.join(csp.get('script-src', []))}")
                 check_screen(page, watch, axe_src, report, "site desktop", phone=False, typed=[])
+                check_support_link(page, report, "site desktop")
                 for opener, label in (("#privacy", "privacy dialog"), ("#accessibility", "accessibility dialog"),
                                       ("#install", "install dialog")):
                     if page.locator(opener).count() and page.is_visible(opener):
@@ -553,6 +565,7 @@ def run_gate(root: pathlib.Path) -> Report:
                 phone_page.goto(origin + "/")
                 settle_consent(phone_page, phone_watch, axe_src, report, "site phone")
                 check_screen(phone_page, phone_watch, axe_src, report, "site phone", phone=True, typed=[])
+                check_support_link(phone_page, report, "site phone")
 
                 # ---- App scenarios, desktop and phone ----
                 if not scenarios:

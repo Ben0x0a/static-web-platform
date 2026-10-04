@@ -83,6 +83,15 @@ def validate_net_origins(net_origins: dict, site_path: pathlib.Path) -> None:
             raise SystemExit(f"{site_path}: netOrigins['{origin}']: " + "; ".join(problems))
 
 
+def validate_support(support: dict | None, site_path: pathlib.Path) -> None:
+    """site.json "support": {"url": "https://…"} — a plain https link (never a widget)."""
+    if support is None:
+        return
+    url = support.get("url", "") if isinstance(support, dict) else ""
+    if not re.fullmatch(r"https://[^\s\"<>]+", url):
+        raise SystemExit(f'{site_path}: "support" must be {{"url": "https://…"}}')
+
+
 def load_project(root: pathlib.Path, site_url_override: str | None = None) -> Project:
     root = root.resolve()
     site_path = root / "src" / SITE_FILENAME
@@ -93,6 +102,7 @@ def load_project(root: pathlib.Path, site_url_override: str | None = None) -> Pr
     if missing:
         raise SystemExit(f"{site_path}: missing keys {', '.join(missing)}")
     validate_net_origins(site["netOrigins"], site_path)
+    validate_support(site.get("support"), site_path)
     for name, entry in site.get("workers", {}).items():
         if not re.fullmatch(r"[a-z][a-z0-9-]*", name):
             raise SystemExit(f"{site_path}: worker name '{name}' must be lower-case letters, digits, '-'")

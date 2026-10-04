@@ -4,6 +4,14 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## 1.2.0 — 2026-10-05
+
+Added
+- "Support the author" link: site.json `"support": {"url": "https://…"}` and
+  `platform.supportLink()` (a plain link, never the provider's widget: nothing is
+  loaded until clicked). The app places it; the gate fails when a declared link is
+  not visible (site desktop, site phone, single file).
+
 ## 1.1.0 — 2026-10-04
 
 Additive: existing apps keep working; new behaviour is opt-in through site.json,

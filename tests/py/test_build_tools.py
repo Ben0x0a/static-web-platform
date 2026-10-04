@@ -13,7 +13,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools"))
 from swp_tools.assemble import config_js, headers_file, inline_css, inline_js  # noqa: E402
-from swp_tools.config import validate_net_origins  # noqa: E402
+from swp_tools.config import validate_net_origins, validate_support  # noqa: E402
 from swp_tools.csp import build_csp  # noqa: E402
 
 SITE = {"id": "app", "title": "App", "lang": "en", "siteUrl": "https://app.example/", "downloadName": "app.html",
@@ -81,6 +81,15 @@ class NetOriginsValidationTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             validate_net_origins({"http://x.example/path": {"directive": "img-src", "purpose": "x"}},
                                  pathlib.Path("site.json"))
+
+
+class SupportValidationTest(unittest.TestCase):
+    def test_https_link_or_nothing(self):
+        validate_support(None, pathlib.Path("site.json"))
+        validate_support({"url": "https://buymeacoffee.com/forandchips"}, pathlib.Path("site.json"))
+        for bad in ({"url": "http://buymeacoffee.com/x"}, {"url": "javascript:alert(1)"}, {}, "https://x"):
+            with self.assertRaises(SystemExit):
+                validate_support(bad, pathlib.Path("site.json"))
 
 
 HAZARDOUS_JS = r"""

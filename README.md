@@ -59,7 +59,7 @@ release, and installs it through npm from that folder:
 
 ```bash
 git submodule add https://github.com/<owner>/static-web-platform.git platform
-git -C platform checkout v1.1.0
+git -C platform checkout v1.2.0
 ```
 ```jsonc
 // package.json of the app
@@ -86,6 +86,7 @@ platform.shortcuts.add({ key: "/", description, run })   // single-key shortcuts
 platform.assets.fetch("data/big.json")         // optional hosted-site files; null in the single file
 platform.worker("solver")           // Web Worker, same call in both outputs
 platform.setStatus(text, notice?)   // announced status line
+platform.supportLink()              // "☕ Buy me a coffee" link (site.json "support"), or null; the app places it
 createRegistry<Spec, Out, Ctx>()    // one renderer per content type
 el(tag, props, …children), byId(id)            // small DOM helpers
 ```
@@ -106,6 +107,7 @@ keeps focused elements visible below it).
 | `netOrigins` | external servers: `{ "https://host": { "directive": "img-src", "purpose": "…", "scope": "origin"\|"request", "referrerPolicy": "no-referrer"\|"origin"\|"strict-origin" } }` |
 | `options` | the app's own options (typed by the app) |
 | `themeSwitch` | offer a light / dark / system choice in *Accessibility* |
+| `support` | `{ "url": "https://buymeacoffee.com/…" }`: "support the author" link, placed by the app with `platform.supportLink()` |
 | `assets`, `precacheAssets` | optional files, hosted site only (globs relative to `src/`); cached offline only if `true` |
 | `workers` | `{ "name": "src/workers/name.ts" }` |
 | `appBuild` | `{ "command": [...], "outDir": "build/app", "inputs": ["vite.config.ts"] }`: own bundler |
