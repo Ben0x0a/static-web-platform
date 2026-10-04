@@ -1,0 +1,112 @@
+"""test_build_tools.py — unit tests of the pure build helpers (CSP, config.js, headers).
+
+Used by : `npm test` (python3 -m unittest).
+Uses    : tools/swp_tools/csp.py, assemble.py.
+"""
+
+import json
+import pathlib
+import shutil
+import subprocess
+import sys
+import unittest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools"))
+from swp_tools.assemble import config_js, headers_file, inline_css, inline_js  # noqa: E402
+from swp_tools.config import validate_net_origins  # noqa: E402
+from swp_tools.csp import build_csp  # noqa: E402
+
+SITE = {"id": "app", "title": "App", "lang": "en", "siteUrl": "https://app.example/", "downloadName": "app.html",
+        "netOrigins": {"https://icons.example": {"directive": "img-src", "purpose": "Icons"}}, "options": {}}
+
+
+def directives(csp: str) -> dict[str, list[str]]:
+    return {p.split()[0]: p.split()[1:] for p in csp.split(";") if p.strip()}
+
+
+class CspTest(unittest.TestCase):
+    def test_site_forbids_inline_code(self):
+        csp = directives(build_csp(SITE, "site"))
+        self.assertEqual(csp["script-src"], ["'self'"])
+        self.assertEqual(csp["style-src"], ["'self'"])
+        self.assertEqual(csp["connect-src"], ["'self'"])
+
+    def test_single_file_may_only_reach_its_site(self):
+        csp = directives(build_csp(SITE, "single"))
+        self.assertEqual(csp["connect-src"], ["https://app.example"])
+        self.assertEqual(csp["worker-src"], ["'none'"])
+
+    def test_single_file_without_site_url_reaches_nothing(self):
+        csp = directives(build_csp({**SITE, "siteUrl": ""}, "single"))
+        self.assertEqual(csp["connect-src"], ["'none'"])
+
+    def test_declared_origins_are_added_under_their_directive(self):
+        for mode in ("site", "single"):
+            self.assertIn("https://icons.example", directives(build_csp(SITE, mode))["img-src"])
+
+
+class AssembleTest(unittest.TestCase):
+    def test_config_js_carries_mode_and_version(self):
+        js = config_js(SITE, "single", "abc123", "2026-10-03")
+        self.assertIn('"mode": "single"', js)
+        self.assertIn('"version": "abc123"', js)
+        self.assertTrue(js.splitlines()[1].startswith("window.__SWP_SITE__ = {"))
+
+    def test_single_file_allows_blob_workers_only_when_declared(self):
+        self.assertEqual(directives(build_csp(SITE, "single"))["worker-src"], ["'none'"])
+        with_workers = {**SITE, "workers": {"solver": "src/workers/solver.ts"}}
+        self.assertEqual(directives(build_csp(with_workers, "single"))["worker-src"], ["blob:"])
+        self.assertEqual(directives(build_csp(with_workers, "site"))["worker-src"], ["'self'"])
+
+    def test_cors_only_on_version_json(self):
+        headers = headers_file(SITE)
+        block = headers.split("/version.json")[1].split("\n\n")[0]
+        self.assertIn("Access-Control-Allow-Origin: *", block)
+        self.assertEqual(headers.count("Access-Control-Allow-Origin"), 1)
+
+
+
+class NetOriginsValidationTest(unittest.TestCase):
+    def test_valid_declaration_passes(self):
+        validate_net_origins({"https://tile.example": {"directive": "img-src", "purpose": "Map",
+                                                       "scope": "origin", "referrerPolicy": "strict-origin"}},
+                             pathlib.Path("site.json"))
+
+    def test_malformed_declarations_are_rejected(self):
+        for spec in ({"directive": "script-src", "purpose": "x"}, {"directive": "img-src"},
+                     {"directive": "img-src", "purpose": "x", "scope": "always"},
+                     {"directive": "img-src", "purpose": "x", "referrerPolicy": "unsafe-url"}):
+            with self.assertRaises(SystemExit):
+                validate_net_origins({"https://x.example": spec}, pathlib.Path("site.json"))
+        with self.assertRaises(SystemExit):
+            validate_net_origins({"http://x.example/path": {"directive": "img-src", "purpose": "x"}},
+                                 pathlib.Path("site.json"))
+
+
+HAZARDOUS_JS = r"""
+const a = "<!--";
+const b = "<script>x</script>";
+const c = `<SCRIPT src=y></Script>`;
+const d = /<!--<script>/u.test("<!--<script>") && !/<!--<script>/u.test("<!--<scrip");
+const e = /<\/script>/.test("</script>");
+console.log(JSON.stringify([a, b, c, d, e]));
+"""
+
+
+class InlineTest(unittest.TestCase):
+    def test_no_hazard_remains(self):
+        out = inline_js(HAZARDOUS_JS)
+        for hazard in ("<!--", "<script", "</script", "<SCRIPT", "</Script"):
+            self.assertNotIn(hazard, out)
+
+    @unittest.skipUnless(shutil.which("node"), "node not on PATH")
+    def test_escaped_code_means_the_same(self):
+        run = lambda js: subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(run(inline_js(HAZARDOUS_JS))), json.loads(run(HAZARDOUS_JS)))
+
+    def test_css_closing_tag_escaped(self):
+        self.assertNotIn("</style", inline_css('a::after { content: "</style>"; }'))
+
+
+if __name__ == "__main__":
+    unittest.main()

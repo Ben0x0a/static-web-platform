@@ -1,0 +1,88 @@
+/*
+  ui/base.css — the platform's shared styles (static-web-platform).
+  Apps put their styles in their own CSS, loaded after this file, so they can
+  override the tokens below.
+
+  Defines : colour tokens (light + dark, WCAG AA contrast), focus ring,
+            visually-hidden utility, skip link, buttons, status line, dialogs
+            (consent, privacy, install), phone rules every app gets (44px
+            targets, 16px form fields), reduced-motion.
+  Used by : the platform build (swp): <link> on the site, inlined in the
+            single file — always before the app's CSS.
+  Uses    : nothing.
+*/
+:root {
+  --bg: #f4f6f8; --surface: #ffffff; --text: #1b1f24; --muted: #555e68;
+  --border: #c4ccd4; --control-border: #79838d; --hover: #e8eef4;
+  --accent: #0b5cad; --on-accent: #ffffff; --focus: #0b5cad; --notice: #7a4b00;
+}
+/* Dark tokens: from the OS setting unless the user chose a theme
+   (<html data-theme="light|dark">, Accessibility dialog). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16191d; --surface: #1f2328; --text: #e8ecf0; --muted: #a9b3bd;
+    --border: #3a424b; --control-border: #6f7a85; --hover: #2a3037;
+    --accent: #7cc4fa; --on-accent: #0b1a26; --focus: #7cc4fa; --notice: #f2c46d;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16191d; --surface: #1f2328; --text: #e8ecf0; --muted: #a9b3bd;
+  --border: #3a424b; --control-border: #6f7a85; --hover: #2a3037;
+  --accent: #7cc4fa; --on-accent: #0b1a26; --focus: #7cc4fa; --notice: #f2c46d;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--accent); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; margin: -1px;
+                   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.skip-link { position: absolute; left: 8px; top: -100px; z-index: 10; padding: 12px 14px; min-height: 44px;
+             background: var(--accent); color: var(--on-accent); border-radius: 6px; }
+.skip-link:focus { top: 8px; }
+
+/* ---- Buttons and header actions ---- */
+button, .button {
+  display: inline-flex; align-items: center; gap: 4px;
+  font: inherit; font-size: 14px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--control-border); border-radius: 6px; padding: 6px 12px;
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+button:hover, .button:hover { background: var(--hover); }
+button:disabled { opacity: 0.6; cursor: default; }
+button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+#app-actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#status { font-size: 14px; color: var(--muted); }
+#status.notice { color: var(--notice); font-weight: 600; }
+
+/* ---- Dialogs ---- */
+dialog { max-width: min(560px, calc(100vw - 32px)); color: var(--text); background: var(--surface);
+         border: 1px solid var(--control-border); border-radius: 10px; padding: 20px; }
+dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+dialog h2 { margin-top: 0; font-size: 18px; }
+dialog dt { font-weight: 600; }
+dialog dd { margin: 0 0 8px; word-break: break-all; }
+.consent-value { display: block; margin-top: 4px; padding: 6px 8px; border-radius: 4px;
+                 background: var(--hover); white-space: pre-wrap; word-break: break-all; }
+dialog li { margin-bottom: 6px; }
+.share-items dd { margin: 0 0 8px; word-break: break-word; }
+#share-link { width: 100%; padding: 6px 8px; font: inherit; }
+dialog fieldset { border: 1px solid var(--border); border-radius: 6px; margin: 12px 0; }
+dialog .choice { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+dialog .choice input { width: 24px; height: 24px; margin: 0; flex: none; }
+dialog .hint { color: var(--muted); font-size: 13px; }
+.dialog-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.origin-list { list-style: none; padding: 0; }
+.origin-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px;
+                  padding: 8px 0; border-bottom: 1px solid var(--border); }
+
+/* ---- Phones (every app): ≥ 44px tap targets; form fields ≥ 16px, because
+   iOS Safari zooms the whole page when focusing a field with smaller text. ---- */
+@media (max-width: 640px) {
+  button, .button { min-height: 44px; }
+  input, select, textarea { font-size: max(16px, 1em); }
+  input:not([type=checkbox]):not([type=radio]), select { min-height: 44px; }
+  dialog .choice input { width: 44px; height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

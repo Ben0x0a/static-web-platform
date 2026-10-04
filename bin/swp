@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""swp — launcher of the static-web-platform tools (see tools/swp_tools/cli.py).
+
+Installed by npm as node_modules/.bin/swp in every app; only puts the tools
+package on the import path and hands over to cli.main().
+"""
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "tools"))
+from swp_tools.cli import main  # noqa: E402  (path set just above)
+
+sys.exit(main())

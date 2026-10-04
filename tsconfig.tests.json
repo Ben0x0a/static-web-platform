@@ -1,0 +1,13 @@
+{
+  "//": "Type-checks the tests (Node test runner) \u2014 kept separate so browser code (src/) cannot use Node globals.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*.ts",
+    "tests/ts/**/*.ts"
+  ]
+}

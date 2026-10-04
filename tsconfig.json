@@ -1,0 +1,27 @@
+{
+  "//": "Type-checks the platform itself (apps check it again through their own tsconfig). Imports use .ts extensions so Node's test runner can execute the sources directly.",
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": [
+      "es2023",
+      "dom",
+      "dom.iterable"
+    ],
+    "types": [],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}

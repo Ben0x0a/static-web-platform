@@ -1,0 +1,13 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Machine-specific agent config
+.claude/
+
+# Node tooling
+node_modules/
+
+# Python bytecode
+__pycache__/
