@@ -73,7 +73,9 @@ export function mountActions({ slot, site, i18n, dialogs, install, net, consent 
       if (result.kind === "up-to-date") setStatus(t("upToDate"));
       else if (result.kind === "available") {
         const wrap = el("span", {}, `${t("updateAvailable")} (${displayDate(result.info.date)}) — `,
-          el("a", { href: result.downloadUrl, textContent: t("updateDownload") }));
+          // download: honoured only for same-origin links (not from file://);
+          // the server's Content-Disposition: attachment does the real work.
+          el("a", { href: result.downloadUrl, download: site.downloadName, textContent: t("updateDownload") }));
         setStatus(wrap, true);
       } else if (result.kind === "failed") {
         console.warn(`Update check failed: ${result.reason}`);

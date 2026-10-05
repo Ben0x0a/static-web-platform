@@ -4,6 +4,20 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## 1.3.1 — 2026-10-05
+
+Fixed
+- The update notice's link in the single file opened the hosted app instead of
+  downloading a new copy on hosts with "pretty URLs" (Cloudflare Pages redirects
+  `/name.html` to `/name`, and the `Content-Disposition: attachment` rule only matched
+  `/name.html`). `_headers` now has the rule for both paths, and the link carries
+  `download` where browsers honour it (same-origin only).
+- `swp serve` imitates pretty URLs (308 `/x.html` → `/x`, headers matched on the
+  path requested), and the gate checks that the notice link really downloads
+  (redirects followed, `Content-Disposition: attachment` required).
+
+Apps: rebuild `public/` (`_headers` changes) and run the gate.
+
 ## 1.3.0 — 2026-10-05
 
 From the first app migrations. No change needed in existing apps; some rules

@@ -59,7 +59,7 @@ release, and installs it through npm from that folder:
 
 ```bash
 git submodule add https://github.com/<owner>/static-web-platform.git platform
-git -C platform checkout v1.3.0
+git -C platform checkout v1.3.1
 ```
 ```jsonc
 // package.json of the app
@@ -185,7 +185,7 @@ From the app's root, with Node on PATH (`mise exec -- …`):
 | `npx swp check` | `public/` is up to date with `src/` (no Node needed) |
 | `npx swp verify` | `public/` is byte-for-byte a fresh rebuild |
 | `npx swp gate` | the full verification gate (needs `scenarios.json`) |
-| `npx swp serve` | serve `public/` with its `_headers` |
+| `npx swp serve` | serve `public/` with its `_headers`, imitating Cloudflare's "pretty URLs" (`/x.html` → `/x`) |
 | `npx swp icons` | render the PNG icons from `src/icons/icon.svg` |
 
 ## Developing the platform

@@ -529,6 +529,18 @@ def check_single_file(page: Page, context, site_dir: pathlib.Path, origin: str, 
             local.wait_for_function("s => document.getElementById('status').textContent.includes(s)",
                                     arg=t("updateAvailable"), timeout=10000)
             report.check(True, "single file: new version on the site → notice shown")
+            # The notice's link must give a NEW OFFLINE COPY, not open the app:
+            # follow it like a browser (redirects included — Cloudflare turns
+            # /x.html into /x) and require the file served as an attachment.
+            href = local.evaluate("document.querySelector('#status a')?.href ?? ''")
+            try:
+                with urllib.request.urlopen(href, timeout=10) as response:
+                    disposition = response.headers.get("Content-Disposition", "")
+                    final_url = response.url
+            except Exception as err:                 # unreachable link = fail, with the reason
+                disposition, final_url = "", f"{href} ({err})"
+            report.check("attachment" in disposition, "single file: update notice link downloads the new copy",
+                         f"{final_url} answered without Content-Disposition: attachment ({disposition or 'none'})")
         finally:
             version_file.write_text(original, encoding="utf-8")
     check_reflow(local, report, "single file")

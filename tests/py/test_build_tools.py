@@ -9,15 +9,26 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
+import threading
 import unittest
+import urllib.request
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools"))
 from swp_tools.assemble import config_js, headers_file, inline_css, inline_js  # noqa: E402
 from swp_tools.config import validate_net_origins, validate_support  # noqa: E402
 from swp_tools.csp import build_csp  # noqa: E402
+from swp_tools.serve import make_server, parse_headers_file  # noqa: E402
 
 SITE = {"id": "app", "title": "App", "lang": "en", "siteUrl": "https://app.example/", "downloadName": "app.html",
         "netOrigins": {"https://icons.example": {"directive": "img-src", "purpose": "Icons"}}, "options": {}}
+
+
+def parse_headers_text(text: str) -> dict[str, list[tuple[str, str]]]:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = pathlib.Path(tmp) / "_headers"
+        path.write_text(text, encoding="utf-8")
+        return dict(parse_headers_file(path))
 
 
 def directives(csp: str) -> dict[str, list[str]]:
@@ -62,6 +73,11 @@ class AssembleTest(unittest.TestCase):
         self.assertEqual(directives(build_csp(with_workers, "single"))["worker-src"], ["blob:"])
         self.assertEqual(directives(build_csp(with_workers, "site"))["worker-src"], ["'self'"])
 
+    def test_download_is_an_attachment_with_and_without_html(self):
+        rules = parse_headers_text(headers_file(SITE))
+        for path in ("/app.html", "/app"):
+            self.assertIn(("Content-Disposition", 'attachment; filename="app.html"'), rules[path], path)
+
     def test_cors_only_on_version_json(self):
         headers = headers_file(SITE)
         block = headers.split("/version.json")[1].split("\n\n")[0]
@@ -94,6 +110,25 @@ class SupportValidationTest(unittest.TestCase):
         for bad in ({"url": "http://buymeacoffee.com/x"}, {"url": "javascript:alert(1)"}, {}, "https://x"):
             with self.assertRaises(SystemExit):
                 validate_support(bad, pathlib.Path("site.json"))
+
+
+class PrettyUrlServeTest(unittest.TestCase):
+    """swp serve imitates Cloudflare Pages: /x.html → 308 → /x, headers matched on the path requested."""
+
+    def test_redirect_then_attachment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "app.html").write_text("<p>offline copy</p>", encoding="utf-8")
+            (root / "_headers").write_text(headers_file(SITE), encoding="utf-8")
+            server = make_server(root)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{server.server_port}/app.html", timeout=5) as response:
+                    self.assertTrue(response.url.endswith("/app"))
+                    self.assertIn("attachment", response.headers.get("Content-Disposition", ""))
+                    self.assertIn("offline copy", response.read().decode())
+            finally:
+                server.shutdown()
 
 
 HAZARDOUS_JS = r"""
