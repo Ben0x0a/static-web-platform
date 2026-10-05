@@ -12,6 +12,7 @@ Commands (in workflow order):
   swp gate                  full verification gate (Chrome, axe-core, mobile)
   swp serve  [DIR] [PORT]   serve public/ with its _headers
   swp icons  [SVG]          render the PNG icons from src/icons/icon.svg
+  swp cors   URL…           does each endpoint answer CORS for the site AND the single file?
 Run from the app's root folder, with Node.js on PATH (e.g. `mise exec -- npx swp build`).
 """
 
@@ -56,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
     serve_cmd = commands.add_parser("serve", help="serve public/ with its _headers")
     serve_cmd.add_argument("directory", nargs="?", type=pathlib.Path, default=pathlib.Path("public"))
     serve_cmd.add_argument("port", nargs="?", type=int, default=8765)
+    cors_cmd = commands.add_parser("cors", help="check endpoints answer CORS for the site and the single file")
+    cors_cmd.add_argument("urls", nargs="+")
     icons_cmd = commands.add_parser("icons", help="render PNG icons from the SVG")
     icons_cmd.add_argument("svg", nargs="?", type=pathlib.Path, default=pathlib.Path("src/icons/icon.svg"))
     args = parser.parse_args(argv)
@@ -92,6 +95,17 @@ def main(argv: list[str] | None = None) -> int:
         logging.getLogger("swp").info(f"Serving {args.directory} at http://127.0.0.1:{server.server_port}/ (Ctrl+C to stop)")
         server.serve_forever()
         return 0
+    if args.command == "cors":
+        from swp_tools.config import load_project
+        from swp_tools.cors import check_cors
+        from swp_tools.csp import site_origin
+        site = load_project(root).site if (root / "src" / "site.json").is_file() else {"siteUrl": ""}
+        results = check_cors(args.urls, site_origin(site) or None)
+        for r in results:
+            print(f"{'OK  ' if r.allowed else 'FAIL'}  {r.url}  (Origin: {r.origin})  {r.detail}")
+        if not site_origin(site):
+            print("Note: site.json siteUrl is empty — only the single file (Origin: null) was checked.")
+        return 0 if all(r.allowed for r in results) else 1
     if args.command == "icons":
         from swp_tools.icons import render
         render(args.svg.resolve())

@@ -14,6 +14,7 @@ export { createRegistry } from "./core/registry.ts";
 export type { Registry } from "./core/registry.ts";
 export type { PrefixedStore } from "./services/storage.ts";
 export type { Network } from "./services/network.ts";
+export { RedirectBlockedError } from "./services/network.ts";
 export type { Assets } from "./services/assets.ts";
 export type { Shortcut, Shortcuts } from "./services/shortcuts.ts";
 export type { Theme } from "./services/display.ts";

@@ -79,6 +79,8 @@ dialog .choice input { width: 24px; height: 24px; margin: 0; flex: none; }
 dialog .hint { color: var(--muted); font-size: 13px; }
 .dialog-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 .origin-list { list-style: none; padding: 0; }
+.origin-group { display: block !important; }
+.origin-group summary { cursor: pointer; padding: 10px 0; min-height: 44px; }
 .origin-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px;
                   padding: 8px 0; border-bottom: 1px solid var(--border); }
 

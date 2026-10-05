@@ -10,7 +10,7 @@
   on "Deny" (safe default); Esc = deny.
 */
 import type { I18n } from "../core/i18n.ts";
-import type { Consent, ConsentAnswer, ConsentQuestion, ConsentState } from "../services/consent.ts";
+import { purposeText as purposeOf, type Consent, type ConsentAnswer, type ConsentQuestion, type ConsentState } from "../services/consent.ts";
 import { setTheme, storedTheme, type Theme } from "../services/display.ts";
 import type { Shortcuts } from "../services/shortcuts.ts";
 import type { PrefixedStore } from "../services/storage.ts";
@@ -82,16 +82,31 @@ export function mountDialogs({ i18n, consent, stores, store, shortcuts, themeSwi
     "always": t("stateAlways"), "session-allow": t("stateSession"),
     "session-deny": t("stateDenied"), "ask": t("stateAsk"), "per-request": t("stateRequest"),
   };
+  const originRow = (origin: string): HTMLLIElement => {
+    const state = consent().state(origin);
+    const forget = button("forget", { disabled: state === "ask" || state === "per-request",
+      onclick: () => { consent().forget(origin); renderPrivacy(); } });
+    forget.setAttribute("aria-label", `${t("forget")} — ${origin}`);
+    return el("li", {}, el("span", {}, el("strong", { textContent: origin }), ` — ${stateLabel[state]}`), forget);
+  };
   const renderPrivacy = (): void => {
-    const origins = Object.keys(consent().declared());
-    list.replaceChildren(...origins.map(origin => {
-      const state = consent().state(origin);
-      const forget = button("forget", { disabled: state === "ask" || state === "per-request",
-        onclick: () => { consent().forget(origin); renderPrivacy(); } });
-      forget.setAttribute("aria-label", `${t("forget")} — ${origin}`);
-      return el("li", {}, el("span", {}, el("strong", { textContent: origin }), ` — ${stateLabel[state]}`), forget);
+    // Origins declared from a dataset (netOriginsFrom) can be hundreds: one
+    // foldable row per dataset keeps the dialog readable.
+    const declared = consent().declared();
+    const groups = new Map<string, string[]>();
+    const single: string[] = [];
+    for (const [origin, def] of Object.entries(declared)) {
+      if (def.group) groups.set(def.group, [...(groups.get(def.group) ?? []), origin]);
+      else single.push(origin);
+    }
+    list.replaceChildren(...single.map(originRow), ...[...groups].map(([group, origins]) => {
+      const first = declared[origins[0] ?? ""];
+      const purpose = first ? purposeOf(first.purpose, i18n.lang) : "";
+      return el("li", { className: "origin-group" }, el("details", {},
+        el("summary", { textContent: t("serverGroup", { purpose, n: origins.length, source: group }) }),
+        el("ul", { className: "origin-list" }, ...origins.map(originRow))));
     }));
-    if (!origins.length) list.append(el("li", { textContent: "—" }));
+    if (!single.length && !groups.size) list.append(el("li", { textContent: "—" }));
   };
   const privacyDialog: HTMLDialogElement = labelled(el("dialog", { id: "privacy-dialog" },
     el("h2", { id: "privacy-title", textContent: t("privacy") }),

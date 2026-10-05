@@ -4,6 +4,27 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## 1.4.0 — 2026-10-06
+
+Security (behaviour change)
+- **Redirects are never followed** by `platform.net.fetch` (`redirect: "manual"`).
+  A browser follows redirects by itself and the CSP only blocks undeclared targets,
+  so a redirect to another declared server carried the value to a server the user
+  had not approved. The redirect target is now never contacted (verified in Chrome:
+  the response is `opaqueredirect`), and `fetch` throws `RedirectBlockedError`
+  (exported; `t("redirectBlocked")` explains it). Apps relying on redirects must call
+  the final server directly.
+- `platform.net.image` refuses origins declared `"scope": "request"` (images follow
+  redirects silently; user input goes through `fetch` with `disclose`).
+
+Added
+- `site.json` `"netOriginsFrom"`: declare every server listed in a bundled dataset
+  (e.g. IANA's RDAP bootstrap) — exact origins, in the CSP and the consent list,
+  shown as one foldable group in the Privacy dialog. The dataset must be under
+  `src/data/` (so described in `SOURCES.md`); an origin declared twice is an error.
+- `swp cors URL…`: checks that endpoints answer CORS for the hosted site AND the
+  single file (`Origin: null`), before they are declared.
+
 ## 1.3.2 — 2026-10-06
 
 Fixed

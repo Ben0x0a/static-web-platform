@@ -16,7 +16,8 @@ import urllib.request
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools"))
 from swp_tools.assemble import config_js, headers_file, inline_css, inline_js  # noqa: E402
-from swp_tools.config import validate_net_origins, validate_support  # noqa: E402
+from swp_tools.config import expand_net_origins_from, validate_net_origins, validate_support  # noqa: E402
+from swp_tools.cors import check_cors  # noqa: E402
 from swp_tools.csp import build_csp  # noqa: E402
 from swp_tools.serve import make_server, parse_headers_file  # noqa: E402
 
@@ -103,6 +104,44 @@ class NetOriginsValidationTest(unittest.TestCase):
                                  pathlib.Path("site.json"))
 
 
+BOOTSTRAP = {"version": "1.0", "services": [
+    [["com", "net"], ["https://rdap.verisign.com/com/v1/"]],
+    [["ch", "li"], ["https://rdap.nic.ch/"]],
+    [["org"], ["https://rdap.publicinterestregistry.org/rdap/", "http://insecure.example/"]],
+]}
+
+
+class NetOriginsFromTest(unittest.TestCase):
+    def make(self, data: dict | None, declared: dict | None = None):
+        root = pathlib.Path(tempfile.mkdtemp(prefix="nof_"))
+        if data is not None:
+            (root / "src" / "data").mkdir(parents=True)
+            (root / "src" / "data" / "rdap.json").write_text(json.dumps(data), encoding="utf-8")
+        site = {"netOrigins": dict(declared or {}), "netOriginsFrom": [
+            {"data": "data/rdap.json", "directive": "connect-src", "purpose": "RDAP", "scope": "request"}]}
+        return root, site
+
+    def test_every_https_origin_is_declared_exactly(self):
+        root, site = self.make(BOOTSTRAP)
+        expand_net_origins_from(site, root, pathlib.Path("site.json"))
+        self.assertEqual(sorted(site["netOrigins"]), ["https://rdap.nic.ch", "https://rdap.publicinterestregistry.org",
+                                                      "https://rdap.verisign.com"])   # http:// ignored
+        spec = site["netOrigins"]["https://rdap.nic.ch"]
+        self.assertEqual((spec["scope"], spec["group"]), ("request", "data/rdap.json"))
+        validate_net_origins(site["netOrigins"], pathlib.Path("site.json"))
+        self.assertIn("https://rdap.nic.ch", directives(build_csp({**SITE, "netOrigins": site["netOrigins"]}, "site"))["connect-src"])
+
+    def test_declared_twice_is_an_error(self):
+        root, site = self.make(BOOTSTRAP, {"https://rdap.nic.ch": {"directive": "connect-src", "purpose": "x"}})
+        with self.assertRaises(SystemExit):
+            expand_net_origins_from(site, root, pathlib.Path("site.json"))
+
+    def test_only_datasets_under_src_data(self):
+        root, site = self.make(None)
+        with self.assertRaises(SystemExit):
+            expand_net_origins_from(site, root, pathlib.Path("site.json"))
+
+
 class SupportValidationTest(unittest.TestCase):
     def test_https_link_or_nothing(self):
         validate_support(None, pathlib.Path("site.json"))
@@ -129,6 +168,28 @@ class PrettyUrlServeTest(unittest.TestCase):
                     self.assertIn("offline copy", response.read().decode())
             finally:
                 server.shutdown()
+
+
+class CorsCheckTest(unittest.TestCase):
+    """swp cors: '*' works for both outputs; echoing only the site fails the single file (Origin: null)."""
+
+    def serve(self, rules: str) -> str:
+        root = pathlib.Path(tempfile.mkdtemp(prefix="cors_"))
+        (root / "a.json").write_text("{}", encoding="utf-8")
+        (root / "_headers").write_text(rules, encoding="utf-8")
+        server = make_server(root)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_port}/a.json"
+
+    def test_star_allows_both(self):
+        url = self.serve("/*\n  Access-Control-Allow-Origin: *\n")
+        self.assertTrue(all(r.allowed for r in check_cors([url], "https://app.example")))
+
+    def test_site_only_fails_the_single_file(self):
+        url = self.serve("/*\n  Access-Control-Allow-Origin: https://app.example\n")
+        results = {r.origin: r.allowed for r in check_cors([url], "https://app.example")}
+        self.assertEqual(results, {"https://app.example": True, "null": False})
 
 
 HAZARDOUS_JS = r"""

@@ -27,6 +27,8 @@ export interface NetOrigin {
   scope?: ConsentScope;
   /** Some services require a referrer (e.g. OpenStreetMap tiles); stated in the dialog. */
   referrerPolicy?: ReferrerChoice;
+  /** Set by the build for origins declared from a dataset (site.json "netOriginsFrom"). */
+  group?: string;
 }
 
 /**

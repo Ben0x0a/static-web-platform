@@ -10,6 +10,7 @@ import dataclasses
 import json
 import pathlib
 import re
+import urllib.parse
 
 PLATFORM_PACKAGE_NAME = "static-web-platform"
 SITE_FILENAME = "site.json"
@@ -65,6 +66,51 @@ CONSENT_SCOPES = {"origin", "request"}
 REFERRER_CHOICES = {"no-referrer", "origin", "strict-origin"}
 
 
+GROUP_KEYS = ("directive", "purpose", "scope", "referrerPolicy")
+
+
+def _https_origins(value) -> set[str]:
+    """Every https origin found in any string of a JSON value (e.g. IANA RDAP bootstrap)."""
+    if isinstance(value, str):
+        if value.startswith("https://"):
+            parts = urllib.parse.urlsplit(value)
+            return {f"https://{parts.netloc.lower()}"} if parts.netloc else set()
+        return set()
+    if isinstance(value, dict):
+        value = list(value.values())
+    if isinstance(value, list):
+        return set().union(*(_https_origins(v) for v in value)) if value else set()
+    return set()
+
+
+def expand_net_origins_from(site: dict, root: pathlib.Path, site_path: pathlib.Path) -> None:
+    """Declare the servers listed in a bundled dataset (site.json "netOriginsFrom").
+
+    WHY: some services have hundreds of servers (RDAP: one per TLD registry).
+    Wildcards would weaken both the CSP and the consent dialog; instead the
+    build reads the dataset (reviewed through SOURCES.md) and declares every
+    origin it lists EXACTLY, in the CSP and the consent list, tagged with the
+    dataset as their "group" (one row in the Privacy dialog).
+    """
+    for group in site.get("netOriginsFrom", []):
+        data = group.get("data", "")
+        source = root / "src" / data
+        # Invariant: the list comes from a reviewed dataset (src/data/ +
+        # SOURCES.md), never from an arbitrary file or the network.
+        if not data.startswith("data/") or not source.is_file():
+            raise SystemExit(f'{site_path}: netOriginsFrom "{data}" must be an existing file under src/data/')
+        origins = sorted(_https_origins(json.loads(source.read_text(encoding="utf-8"))))
+        if not origins:
+            raise SystemExit(f"{site_path}: netOriginsFrom {data}: no https address found")
+        spec = {key: group[key] for key in GROUP_KEYS if key in group}
+        for origin in origins:
+            # Invariant: one declaration per origin — two with different scopes
+            # or purposes would make the consent dialog ambiguous.
+            if origin in site["netOrigins"]:
+                raise SystemExit(f"{site_path}: {origin} is declared twice (netOrigins and netOriginsFrom {data})")
+            site["netOrigins"][origin] = {**spec, "group": data}
+
+
 def validate_net_origins(net_origins: dict, site_path: pathlib.Path) -> None:
     """Reject malformed declarations early: they feed both the CSP and the consent dialog."""
     for origin, spec in net_origins.items():
@@ -101,6 +147,7 @@ def load_project(root: pathlib.Path, site_url_override: str | None = None) -> Pr
     missing = [key for key in REQUIRED_SITE_KEYS if key not in site]
     if missing:
         raise SystemExit(f"{site_path}: missing keys {', '.join(missing)}")
+    expand_net_origins_from(site, root, site_path)
     validate_net_origins(site["netOrigins"], site_path)
     validate_support(site.get("support"), site_path)
     for mode in site.get("modes", []):
