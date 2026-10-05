@@ -55,7 +55,8 @@ PHONE_LANDSCAPE = {"width": 844, "height": 390}
 MIN_TAP_PX = 44                # house rule on phones (WCAG 2.2 AA minimum is 24)
 MIN_FIELD_FONT_PX = 16         # below this, iOS Safari zooms the page on focus
 SCENARIOS_FILENAME = "scenarios.json"
-STEP_KINDS = {"click", "fill", "press", "expect", "wait", "consent"}
+STEP_KINDS = {"click", "fill", "press", "expect", "wait", "consent", "upload"}
+FIXTURES_DIR = "tests/fixtures"     # scenario uploads: small, synthetic files only
 CONSENT_ANSWERS = {"deny", "once", "session", "always"}
 SHORTCUT_PROBE_KEYS = list("abcdefghijklmnopqrstuvwxyz0123456789") + ["/", "?", ".", ","]
 
@@ -63,6 +64,11 @@ SHORTCUT_PROBE_KEYS = list("abcdefghijklmnopqrstuvwxyz0123456789") + ["/", "?", 
 PAGE_HELPERS_JS = """() => {
   window.__swpDescribe = e => e.id ? '#' + e.id
     : e.tagName.toLowerCase() + ' "' + (e.textContent || e.value || e.getAttribute('aria-label') || '').trim().slice(0, 30) + '"';
+  // Stable identity per element: the tab order can change during a walk
+  // (popovers opening/closing), so positions in the list are not identities.
+  window.__swpIdMap = window.__swpIdMap || new WeakMap();
+  window.__swpNextId = window.__swpNextId || 1;
+  window.__swpId = e => { if (!window.__swpIdMap.has(e)) window.__swpIdMap.set(e, window.__swpNextId++); return window.__swpIdMap.get(e); };
   window.__swpTabbable = () => [...document.querySelectorAll(
       'a[href], button, input:not([type=hidden]), select, textarea, summary, [tabindex], [contenteditable="true"]')]
     .filter(e => e.tabIndex >= 0 && !e.disabled && !e.closest('[inert]')
@@ -87,9 +93,18 @@ TAP_TARGETS_JS = """([minSize]) => {
     if (!r.width || !r.height || r.bottom <= 0 || r.right <= 0 || style.visibility === 'hidden') return [];
     // WCAG 2.5.8 exception: a link inside a sentence is sized by the text around it.
     if (e.tagName === 'A' && style.display === 'inline') return [];
-    // Only the VISIBLE box counts (an invisible enlarged hit area does not).
-    return (r.width < minSize || r.height < minSize)
-      ? [`${window.__swpDescribe(e)} ${Math.round(r.width)}×${Math.round(r.height)}`] : [];
+    // Only VISIBLE boxes count (an invisible enlarged hit area does not) — but a
+    // field's own visible <label> is part of its target: clicking it activates
+    // the field, so a normal-size checkbox in a 44px label row passes.
+    let box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    for (const l of (e.labels || [])) {
+      const lr = l.getBoundingClientRect();
+      if (!lr.width || !lr.height) continue;
+      box = { left: Math.min(box.left, lr.left), top: Math.min(box.top, lr.top),
+              right: Math.max(box.right, lr.right), bottom: Math.max(box.bottom, lr.bottom) };
+    }
+    const w = box.right - box.left, h = box.bottom - box.top;
+    return (w < minSize || h < minSize) ? [`${window.__swpDescribe(e)} ${Math.round(w)}×${Math.round(h)}`] : [];
   });
 }"""
 
@@ -104,7 +119,7 @@ FOCUS_STATE_JS = """([checkObscured]) => {
     const hit = document.elementFromPoint(r.left + Math.min(r.width / 2, 20), r.top + Math.min(r.height / 2, 10));
     obscured = !hit || !(hit === e || e.contains(hit) || hit.contains(e));
   }
-  return { index: window.__swpTabbable().indexOf(e), name: window.__swpDescribe(e), visible, obscured };
+  return { index: window.__swpTabbable().includes(e) ? window.__swpId(e) : -1, name: window.__swpDescribe(e), visible, obscured };
 }"""
 
 TEXT_SPACING_JS = """() => {
@@ -194,6 +209,13 @@ def load_scenarios(root: pathlib.Path) -> list[dict]:
                                  f"(one of {sorted(STEP_KINDS)})")
             if "consent" in step and step["consent"] not in CONSENT_ANSWERS:
                 raise SystemExit(f"{path}: consent answer must be one of {sorted(CONSENT_ANSWERS)}")
+            if "upload" in step:
+                selector, file_name = step["upload"]
+                fixture = (root / file_name).resolve()
+                # Invariant: uploads come from tests/fixtures/ (small, synthetic,
+                # committed) — never a real evidence file from somewhere else.
+                if not fixture.is_relative_to((root / FIXTURES_DIR).resolve()) or not fixture.is_file():
+                    raise SystemExit(f"{path}: upload {file_name}: must be an existing file under {FIXTURES_DIR}/")
     return scenarios
 
 
@@ -256,8 +278,11 @@ def check_labels(page: Page, report: Report, label: str) -> None:
 
 
 def check_keyboard(page: Page, report: Report, label: str, phone: bool, limit_stops: int | None = None) -> None:
-    """Tab through the page: all reachable, focus visible, focus cycles back (no trap);
-    on phones the focused element must not be hidden (e.g. under a sticky header)."""
+    """Tab through the page: all reachable, focus visible, focus cycles back (no
+    trap), focused element never hidden (e.g. under a sticky header) — desktop
+    and phone. Elements are tracked by identity, so popovers that open or close
+    during the walk do not confuse it; "reachable" is judged on the elements
+    still focusable at the end."""
     page.evaluate(PAGE_HELPERS_JS)
     total = page.evaluate("window.__swpTabbable().length")
     if not total:
@@ -272,7 +297,7 @@ def check_keyboard(page: Page, report: Report, label: str, phone: bool, limit_st
     stops = limit_stops or total * 2 + 10
     for _ in range(stops):
         page.keyboard.press("Tab")
-        state = page.evaluate(FOCUS_STATE_JS, [phone])
+        state = page.evaluate(FOCUS_STATE_JS, [True])
         index = state["index"]
         if index < 0:
             continue                                  # browser UI / body between cycles
@@ -287,11 +312,11 @@ def check_keyboard(page: Page, report: Report, label: str, phone: bool, limit_st
         if state["obscured"]:
             obscured.append(state["name"])
     if limit_stops is None:
-        missing = page.evaluate("ids => window.__swpTabbable().filter((e, i) => !ids.includes(i)).map(window.__swpDescribe)",
+        missing = page.evaluate("ids => window.__swpTabbable().filter(e => !ids.includes(window.__swpId(e))).map(window.__swpDescribe)",
                                 sorted(visited | ({first} if first is not None else set())))
         report.check(cycled, f"{label}: keyboard focus cycles (no trap)", f"focus did not come back after {stops} Tab presses")
         report.check(not missing, f"{label}: everything reachable by keyboard", ", ".join(missing[:10]))
-    if phone:
+    if True:
         # Backwards (Shift+Tab) the browser scrolls each element in at the TOP of
         # the screen — exactly where a sticky header can hide it (WCAG 2.4.11).
         for _ in range(min(total, 60)):
@@ -301,9 +326,8 @@ def check_keyboard(page: Page, report: Report, label: str, phone: bool, limit_st
                 obscured.append(state["name"])
     page.evaluate("document.activeElement && document.activeElement.blur()")   # leave the page as found
     report.check(not invisible, f"{label}: focus always visible", ", ".join(invisible[:10]))
-    if phone:
-        report.check(not obscured, f"{label}: focused element never hidden (sticky header)",
-                     ", ".join(sorted(set(obscured))[:10]))
+    report.check(not obscured, f"{label}: focused element never hidden (WCAG 2.4.11)",
+                 ", ".join(sorted(set(obscured))[:10]))
 
 
 def check_url_and_title(page: Page, report: Report, label: str, typed: list[str]) -> None:
@@ -393,7 +417,7 @@ def settle_consent(page: Page, watch: Watch, axe_src: str, report: Report, label
     page.wait_for_function("document.getElementById('consent-dialog')?.open !== true", timeout=5000)
 
 
-def run_steps(page: Page, steps: list[dict], watch: Watch) -> list[str]:
+def run_steps(page: Page, steps: list[dict], watch: Watch, root: pathlib.Path) -> list[str]:
     """Play a scenario; returns the values typed (checked against URL and title)."""
     typed: list[str] = []
     for step in steps:
@@ -409,9 +433,16 @@ def run_steps(page: Page, steps: list[dict], watch: Watch) -> list[str]:
             page.wait_for_selector(value, state="visible", timeout=5000)
         elif kind == "wait":
             page.wait_for_timeout(int(value))
+        elif kind == "upload":
+            page.set_input_files(value[0], str(root / value[1]), timeout=5000)
         elif kind == "consent":
             page.wait_for_function("document.getElementById('consent-dialog')?.open === true", timeout=5000)
             origin = page.inner_text("#consent-origin").strip()
+            offered = page.evaluate("""() => [...document.querySelectorAll('#consent-dialog [data-answer]')]
+                .filter(b => !b.hidden).map(b => b.dataset.answer)""")
+            if value not in offered:
+                raise RuntimeError(f"consent '{value}' is not offered for {origin} (offered: {', '.join(offered)}; "
+                                   "'once' exists only for \"scope\": \"request\" origins)")
             if value != "deny":
                 watch.granted.add(origin)
             page.click(f"#consent-dialog [data-answer='{value}']")
@@ -578,7 +609,7 @@ def run_gate(root: pathlib.Path) -> Report:
                         scenario_page.goto(origin + "/")
                         scenario_page.wait_for_load_state("networkidle")
                         try:
-                            typed = run_steps(scenario_page, scenario.get("steps", []), scenario_watch)
+                            typed = run_steps(scenario_page, scenario.get("steps", []), scenario_watch, project.root)
                         except Exception as err:     # a step failed: report, continue with the next scenario
                             report.check(False, f"{label}: steps play", str(err).splitlines()[0])
                             continue

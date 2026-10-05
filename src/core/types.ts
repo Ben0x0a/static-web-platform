@@ -42,8 +42,8 @@ export interface SiteConfig<O = Record<string, unknown>> {
   downloadName: string;
   netOrigins: Record<string, NetOrigin>;
   options: O;
-  /** "site" = hosted multi-file app; "single" = the downloadable file. */
-  mode: "site" | "single";
+  /** "site" = hosted app; "single" = the downloadable file; "dev" = a framework dev server. */
+  mode: "site" | "single" | "dev";
   /** Hash of the sources and toolchain, set by the build. */
   version: string;
   /** Build date, ISO 8601 (YYYY-MM-DD). */

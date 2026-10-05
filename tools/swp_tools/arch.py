@@ -8,8 +8,10 @@ Uses    : the app's src/ tree (imports read with regular expressions from
 Layers (by first folder under src/; anything else at the root is "app"):
   data      bundled datasets (src/data/*.json + SOURCES.md): imported ONLY by
             core, through a typed loader that a unit test pins.
-  core      pure domain: may import only core and data (and pure npm packages); a
-            core/<mode>/ folder never imports another core/<mode>/.
+  core      pure domain: may import only core and data (and pure npm packages).
+            Sub-folders are plain organisation and import each other freely,
+            EXCEPT the modes declared in site.json "modes": a core/<mode>/ folder
+            never imports another declared mode (shared code lives outside them).
             No DOM either: checked separately by type-checking core/ without
             the DOM library (bundle.check_core_is_pure).
   ui        shared display helpers: core, ui, the platform.
@@ -54,9 +56,9 @@ def _feature_name(relative: pathlib.PurePosixPath) -> str:
     return relative.parts[1].split(".")[0]
 
 
-def _core_mode(relative: pathlib.PurePosixPath) -> str | None:
-    """core/identifiers/x.ts → "identifiers"; core/types.ts → None (shared root)."""
-    return relative.parts[1] if len(relative.parts) > 2 else None
+def _core_mode(relative: pathlib.PurePosixPath, modes: set[str]) -> str | None:
+    """core/identifiers/x.ts → "identifiers" when declared as a mode; otherwise None."""
+    return relative.parts[1] if len(relative.parts) > 2 and relative.parts[1] in modes else None
 
 
 def _imports(path: pathlib.Path) -> list[str]:
@@ -66,6 +68,7 @@ def _imports(path: pathlib.Path) -> list[str]:
 
 def check_architecture(project: Project) -> None:
     src = project.src
+    modes = set(project.site.get("modes", []))
     problems: list[str] = []
     for path in sorted(p for p in src.rglob("*") if p.suffix in SOURCE_SUFFIXES and p.is_file()):
         rel = pathlib.PurePosixPath(path.relative_to(src).as_posix())
@@ -85,8 +88,9 @@ def check_architecture(project: Project) -> None:
                     problems.append(f"{rel} ({layer}) may not import {target} ({target_layer})")
                 elif layer == "features" and target_layer == "features" and _feature_name(rel) != _feature_name(target):
                     problems.append(f"{rel}: features never import other features ({target}) — compose in main.ts")
-                elif layer == "core" and _core_mode(rel) and _core_mode(target) and _core_mode(rel) != _core_mode(target):
-                    problems.append(f"{rel}: core modes never import each other ({target}) — share via core/ root")
+                elif (layer == "core" and _core_mode(rel, modes) and _core_mode(target, modes)
+                      and _core_mode(rel, modes) != _core_mode(target, modes)):
+                    problems.append(f"{rel}: modes never import each other ({target}) — share via code outside the modes")
             elif spec == PLATFORM_PACKAGE_NAME or spec.startswith(PLATFORM_PACKAGE_NAME + "/"):
                 if spec != PLATFORM_PACKAGE_NAME:
                     problems.append(f"{rel}: import the platform's public API only ('{PLATFORM_PACKAGE_NAME}'), not {spec}")

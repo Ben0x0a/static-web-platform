@@ -103,6 +103,11 @@ def load_project(root: pathlib.Path, site_url_override: str | None = None) -> Pr
         raise SystemExit(f"{site_path}: missing keys {', '.join(missing)}")
     validate_net_origins(site["netOrigins"], site_path)
     validate_support(site.get("support"), site_path)
+    for mode in site.get("modes", []):
+        # Invariant: a declared mode is a folder of core/ — a typo would silently
+        # leave the real folder unprotected.
+        if not (root / "src" / "core" / mode).is_dir():
+            raise SystemExit(f'{site_path}: "modes": core/{mode}/ does not exist')
     for name, entry in site.get("workers", {}).items():
         if not re.fullmatch(r"[a-z][a-z0-9-]*", name):
             raise SystemExit(f"{site_path}: worker name '{name}' must be lower-case letters, digits, '-'")

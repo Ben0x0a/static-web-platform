@@ -20,6 +20,7 @@ import dataclasses
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 
@@ -49,6 +50,34 @@ def _bin(project: Project, name: str) -> str:
     if not path.exists():
         raise SystemExit(f"{name} missing from node_modules/.bin: add it to devDependencies and run `npm ci`")
     return str(path)
+
+
+EMBEDDED_ASSET_TYPES = ("png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "ico", "woff", "woff2", "ttf", "otf")
+CORE_RUNTIME_TYPES = pathlib.Path(__file__).resolve().parent / "core-runtime.d.ts"
+
+
+def check_node(project: Project) -> None:
+    """The Node.js on PATH must be the version pinned in the app's mise.toml.
+
+    WHY: npm ships with Node, and npm versions differ in how they link package
+    binaries (Node 24.19.0's npm did not link esbuild). A pinned EXACT version
+    makes every machine and CI install and build the same way.
+    """
+    mise = project.root / "mise.toml"
+    pinned = re.search(r'^node\s*=\s*"([^"]+)"', mise.read_text(encoding="utf-8"), re.MULTILINE) if mise.is_file() else None
+    if not pinned:
+        return
+    # Invariant: an exact x.y.z pin — "24" floats to whatever 24.x is newest,
+    # which is how two machines ended up with npm versions that link differently.
+    if not re.fullmatch(r"\d+\.\d+\.\d+", pinned.group(1)):
+        raise SystemExit(f'mise.toml: pin an exact Node version (e.g. node = "24.21.0"), not "{pinned.group(1)}"')
+    try:
+        running = subprocess.run(["node", "--version"], capture_output=True, text=True).stdout.strip().lstrip("v")
+    except OSError:
+        raise SystemExit("node not on PATH: run through mise, e.g. `mise exec -- npx swp build`")
+    if running != pinned.group(1):
+        raise SystemExit(f"Node {running} on PATH, but mise.toml pins {pinned.group(1)}: "
+                         "run through mise (`mise exec -- npx swp build`), then `npm ci`")
 
 
 def typecheck(project: Project) -> None:
@@ -81,7 +110,9 @@ def check_core_is_pure(project: Project) -> None:
     config.write_text(json.dumps({
         "extends": "../tsconfig.json",
         "compilerOptions": {"lib": ["es2023"], "types": [], "noEmit": True},
-        "include": ["../src/core/**/*.ts"],
+        # core-runtime.d.ts: the few non-DOM runtime APIs core/ may use
+        # (TextEncoder/Decoder, structuredClone, crypto) — see that file.
+        "include": ["../src/core/**/*.ts", str(CORE_RUNTIME_TYPES)],
     }, indent=2), encoding="utf-8")
     _run([_bin(project, "tsc"), "-p", str(config)], project, "core purity check (no DOM in src/core)")
 
@@ -101,6 +132,10 @@ def bundle_app(project: Project) -> AppBundle:
              # source comments: no local path leaks into the published file, and
              # the output is identical on every machine (swp verify in CI).
              "--preserve-symlinks",
+             # Images and fonts referenced from CSS (e.g. a library's stylesheet)
+             # are embedded as data: URLs — they then work in both outputs,
+             # including the single file, with no extra request.
+             *(f"--loader:.{ext}=dataurl" for ext in EMBEDDED_ASSET_TYPES),
              f"--outfile={outfile}"], project, "esbuild")
         esbuild(project.entry, out / "app.js")
         for name, entry in project.workers.items():

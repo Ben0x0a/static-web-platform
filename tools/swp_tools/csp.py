@@ -28,6 +28,8 @@ def build_csp(site: dict, mode: str) -> str:
         "manifest-src": ["'none'"] if single else ["'self'"],
         # Single file: declared workers start from inline code via blob: URLs.
         "worker-src": (["blob:"] if site.get("workers") else ["'none'"]) if single else ["'self'"],
+        # Fonts embedded by the bundler (data: URLs) — never fetched from a server.
+        "font-src": ["data:"],
         "base-uri": ["'none'"],
         "form-action": ["'none'"],
     }

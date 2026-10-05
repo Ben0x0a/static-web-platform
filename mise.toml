@@ -1,3 +1,3 @@
-# mise.toml — Node.js used to type-check and test the platform.
+# mise.toml — exact Node.js version (npm comes with it): type-check and test the platform.
 [tools]
-node = "24"
+node = "24.21.0"

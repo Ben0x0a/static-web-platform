@@ -59,7 +59,7 @@ release, and installs it through npm from that folder:
 
 ```bash
 git submodule add https://github.com/<owner>/static-web-platform.git platform
-git -C platform checkout v1.2.0
+git -C platform checkout v1.3.0
 ```
 ```jsonc
 // package.json of the app
@@ -106,6 +106,7 @@ keeps focused elements visible below it).
 | `entry` | bundler entry (default `src/main.ts`) |
 | `netOrigins` | external servers: `{ "https://host": { "directive": "img-src", "purpose": "…", "scope": "origin"\|"request", "referrerPolicy": "no-referrer"\|"origin"\|"strict-origin" } }` |
 | `options` | the app's own options (typed by the app) |
+| `modes` | `["identifiers", "files"]`: `core/` sub-folders isolated from each other (other sub-folders import freely) |
 | `themeSwitch` | offer a light / dark / system choice in *Accessibility* |
 | `support` | `{ "url": "https://buymeacoffee.com/…" }`: "support the author" link, placed by the app with `platform.supportLink()` |
 | `assets`, `precacheAssets` | optional files, hosted site only (globs relative to `src/`); cached offline only if `true` |
@@ -121,7 +122,10 @@ keeps focused elements visible below it).
 - `workers/<name>.js`: one self-contained script per declared worker.
 
 By default esbuild produces them from `entry` and `workers`. TypeScript, JSX (React,
-Preact) and CSS imports work out of the box. Frameworks that need `eval` at run time
+Preact) and CSS imports work out of the box; images and fonts referenced from CSS
+(e.g. a library stylesheet such as `leaflet.css`) are embedded as `data:` URLs, so
+they also work in the single file. With your own bundler, inline them too (Vite:
+`build.assetsInlineLimit`). Frameworks that need `eval` at run time
 are not allowed (the CSP forbids it).
 
 **Verified frameworks** (full gate, byte-for-byte rebuild):
@@ -151,8 +155,8 @@ export default defineConfig({
 ```
 Vue is not verified yet.
 
-**Dev servers:** `npx swp build --dev` writes `config.js` and `base.css` into
-`build/dev/`. Serve that folder as static files (e.g. Vite `publicDir`) and load both
+**Dev servers:** `npx swp build --dev` writes `config.js` (mode `"dev"`: no service
+worker, no install/download) and `base.css` into `build/dev/`. Serve that folder as static files (e.g. Vite `publicDir`) and load both
 from the dev page, before the app.
 
 ### TypeScript requirements
@@ -161,6 +165,14 @@ from the dev page, before the app.
 `resolveJsonModule` (datasets). These rules let Node's test runner execute the
 TypeScript directly (`node --test`): no `enum`, no `namespace`, no constructor
 parameter properties, and type-only imports written `import type`.
+
+`src/core/` is type-checked a second time **without the DOM library**; besides
+ECMAScript it may use only `TextEncoder`, `TextDecoder`, `structuredClone` and
+`crypto` (`getRandomValues`, `randomUUID`, `subtle.digest`) — the APIs pages,
+workers and Node share (`tools/swp_tools/core-runtime.d.ts`).
+
+**Node:** `mise.toml` pins an exact version (`node = "24.21.0"`); `swp build` refuses
+another one, because npm versions differ in how they link package binaries.
 
 ## Commands
 
@@ -188,12 +200,13 @@ one app (and the Svelte example, if the build contract changed) through
 `swp build` + `swp gate`.
 
 ### First release (one time)
-1. `git add -A && git commit -m "feat: static-web-platform 1.1.0"`.
-2. `git tag v1.1.0` (never move a tag afterwards).
+1. Commit the release (`feat: …`).
+2. `git tag -a vX.Y.Z` (never move a tag afterwards).
 3. Create the GitHub repository `static-web-platform`; then
    `git remote add origin …`, then `git push -u origin main --tags`.
-4. A private repository needs CI read access in each app: a deploy key or a
-   fine-grained token, used by `actions/checkout` for the submodule.
+4. Public repository: apps' CI fetches the submodule with `submodules: true`.
+   Private repository: apps fetch it with a read-only deploy key in a separate step
+   (the `static-web-app` skill, "Private platform: CI access").
 
 ### Every release
 Update `CHANGELOG.md`, then bump `version` in `package.json` (semantic versioning:

@@ -14,20 +14,23 @@ from swp_tools.arch import check_architecture  # noqa: E402
 from swp_tools.config import Project  # noqa: E402
 
 
-def make_app(files: dict[str, str]) -> Project:
+def make_app(files: dict[str, str], modes: list[str] | None = None) -> Project:
     root = pathlib.Path(tempfile.mkdtemp(prefix="arch_"))
     for name, text in files.items():
         path = root / "src" / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
-    return Project(root=root, site={}, platform_dir=root)
+    return Project(root=root, site={"modes": modes if modes is not None else ["ids", "files"]}, platform_dir=root)
 
 
 GOOD = {
     "core/types.ts": "export type X = 1;",
     "core/dataset.ts": 'import rows from "../data/rows.json";',
     "data/rows.json": "[]",
-    "core/ids/parse.ts": 'import type { X } from "../types.ts";',
+    "core/ids/parse.ts": 'import type { X } from "../types.ts";\nimport { enc } from "../text/encode.ts";',
+    "core/text/encode.ts": 'import { vcard } from "../vcard/parse.ts";',
+    "core/vcard/parse.ts": 'import type { X } from "../types.ts";',
+    "core/files/read.ts": 'import { enc } from "../text/encode.ts";',
     "ui/frame.ts": 'import { el } from "static-web-platform";\nimport type { X } from "../core/types.ts";',
     "state/selection.ts": 'import type { X } from "../core/types.ts";',
     "features/notes/notes.ts": 'import "./notes.css";\nimport { tabs } from "./tabs.ts";\nimport { frame } from "../../ui/frame.ts";',
@@ -59,7 +62,14 @@ class ArchTest(unittest.TestCase):
 
     def test_core_modes_are_isolated(self):
         self.assert_broken({"core/files/x.ts": 'import { parse } from "../ids/parse.ts";'},
-                           "core modes never import each other")
+                           "modes never import each other")
+
+    def test_plain_core_subfolders_import_each_other(self):
+        # text/ and vcard/ are organisation, not modes: GOOD already has them importing each other.
+        check_architecture(make_app(GOOD))
+
+    def test_undeclared_subfolders_are_not_modes(self):
+        check_architecture(make_app({**GOOD, "core/files/x.ts": 'import { parse } from "../ids/parse.ts";'}, modes=[]))
 
     def test_deep_platform_import(self):
         self.assert_broken({"features/search.ts": 'import { x } from "static-web-platform/src/ui/dom.ts";'},

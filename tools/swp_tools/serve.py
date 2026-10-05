@@ -59,6 +59,13 @@ def _make_handler(directory: pathlib.Path):
     return functools.partial(Handler, directory=str(directory))
 
 
+class _Server(http.server.ThreadingHTTPServer):
+    # Python's default backlog is 5 pending connections: too few for browsers
+    # (and parallel test runs) opening many connections at once.
+    request_queue_size = 128
+    daemon_threads = True
+
+
 def make_server(directory: pathlib.Path, port: int = 0) -> http.server.ThreadingHTTPServer:
     """Create (not start) a server for `directory` on 127.0.0.1; port 0 = any free port."""
-    return http.server.ThreadingHTTPServer(("127.0.0.1", port), _make_handler(directory))
+    return _Server(("127.0.0.1", port), _make_handler(directory))

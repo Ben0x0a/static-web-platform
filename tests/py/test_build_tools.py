@@ -40,6 +40,10 @@ class CspTest(unittest.TestCase):
         csp = directives(build_csp({**SITE, "siteUrl": ""}, "single"))
         self.assertEqual(csp["connect-src"], ["'none'"])
 
+    def test_fonts_only_from_embedded_data(self):
+        for mode in ("site", "single"):
+            self.assertEqual(directives(build_csp(SITE, mode))["font-src"], ["data:"])
+
     def test_declared_origins_are_added_under_their_directive(self):
         for mode in ("site", "single"):
             self.assertIn("https://icons.example", directives(build_csp(SITE, mode))["img-src"])

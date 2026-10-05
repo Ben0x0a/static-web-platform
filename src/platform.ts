@@ -102,7 +102,7 @@ export function startPlatform<O = Record<string, unknown>>(options: StartOptions
   const net = createNetwork(consent);
   const actions = mountActions({ slot: byId(options.actionsSlot ?? "app-actions"), site, i18n, dialogs,
     install: createInstall(), net, consent });
-  if (site.mode === "site") registerServiceWorker();
+  if (site.mode === "site") registerServiceWorker();      // never in "dev" (the dev server has no sw.js)
   keepFocusVisibleUnderStickyHeaders();
   // Read-only hook for the verification gate (swp gate), which checks status
   // messages in the app's language. Exposes UI text only, nothing else.

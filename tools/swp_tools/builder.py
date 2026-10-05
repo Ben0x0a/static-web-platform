@@ -20,7 +20,7 @@ import tempfile
 from swp_tools.assemble import (VERSION_FILENAME, config_js, headers_file, manifest_json, platform_css,
                                 render_page, service_worker)
 from swp_tools.arch import check_architecture
-from swp_tools.bundle import bundle_app, typecheck
+from swp_tools.bundle import bundle_app, check_node, typecheck
 from swp_tools.config import Project, load_project
 from swp_tools.data import check_datasets, resolve_assets
 from swp_tools.version import source_version
@@ -30,6 +30,7 @@ ICON_FILES = ("icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"
 
 
 def build(project: Project, out: pathlib.Path, date: str | None = None) -> None:
+    check_node(project)
     check_architecture(project)
     assets = resolve_assets(project)
     check_datasets(project, assets)
@@ -81,17 +82,18 @@ def build(project: Project, out: pathlib.Path, date: str | None = None) -> None:
         (out / name).write_text(text, encoding="utf-8")
     if not site["siteUrl"]:
         _LOG.warning("site.json siteUrl is empty: the downloaded file will not offer update checks")
-    _LOG.info(f"Built {out} — version {version}; download {site['downloadName']} sha256 {sha256}")
+    _LOG.info(f"Built {out} — version {version}; download {site['downloadName']} sha256 {sha256}; "
+              f"app.js {len(bundle.js.encode('utf-8')):,} bytes, app.css {len(bundle.css.encode('utf-8')):,} bytes")
 
 
 def build_dev(project: Project, out: pathlib.Path) -> None:
     """Write only what a framework dev server cannot produce: config.js (mode
-    "site", version "dev") and the platform's base.css. Point the dev server's
+    "dev": no service worker, no install/download) and the platform's base.css. Point the dev server's
     static folder at `out` (e.g. Vite publicDir) and load both from the dev page.
     """
     out.mkdir(parents=True, exist_ok=True)
     assets = resolve_assets(project)
-    (out / "config.js").write_text(config_js(project.site, "site", "dev", datetime.date.today().isoformat(), assets),
+    (out / "config.js").write_text(config_js(project.site, "dev", "dev", datetime.date.today().isoformat(), assets),
                                    encoding="utf-8")
     (out / "base.css").write_text(platform_css(project), encoding="utf-8")
     _LOG.info(f"Dev files written to {out} (config.js, base.css)")

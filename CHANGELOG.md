@@ -4,6 +4,39 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## 1.3.0 — 2026-10-05
+
+From the first app migrations. No change needed in existing apps; some rules
+become less strict, so apps can drop their workarounds.
+
+Added
+- `site.json` `"modes"`: only the declared `core/<mode>/` folders are isolated from
+  each other; other `core/` sub-folders are plain organisation and import freely
+  (previously every sub-folder was a "mode").
+- `core/` may use `TextEncoder`, `TextDecoder`, `structuredClone` and `crypto`
+  (`getRandomValues`, `randomUUID`, `subtle.digest`): available in pages, workers and
+  Node (`tools/swp_tools/core-runtime.d.ts`). The DOM, `fetch` and storage stay
+  forbidden.
+- Images and fonts referenced from CSS (e.g. a library stylesheet) are embedded as
+  `data:` URLs; CSP `font-src data:`. The build reports `app.js` / `app.css` sizes.
+- Scenario step `{"upload": [selector, "tests/fixtures/…"]}` (synthetic fixtures only).
+- Config mode `"dev"` (`swp build --dev`): no service worker, no install/download.
+
+Changed
+- Exact Node pin required in `mise.toml` (e.g. `"24.21.0"`), checked by `swp build`
+  (npm versions differ in how they link binaries).
+- Tap targets: a field's own visible `<label>` is part of its target. The
+  platform's dialog checkboxes are back to normal size, in 44px label rows.
+- `swp serve`: backlog 128 connections (was Python's default 5).
+
+Fixed
+- Keyboard walk tracks elements by identity: popovers opening or closing during the
+  walk no longer confuse it.
+- "Focus never hidden" (WCAG 2.4.11) is checked on desktop too; the skip link is
+  above any sticky header.
+- An unavailable consent answer in a scenario (e.g. `"once"` for a non-request
+  origin) fails immediately with a clear message instead of a timeout.
+
 ## 1.2.0 — 2026-10-05
 
 Added

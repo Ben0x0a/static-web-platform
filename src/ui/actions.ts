@@ -62,6 +62,10 @@ export function mountActions({ slot, site, i18n, dialogs, install, net, consent 
   }
 
   slot.append(privacy, accessibility, status);
+  if (site.mode === "dev") {                                 // framework dev server: no install, download or update
+    setStatus(t("devBuild"));
+    return { setStatus };
+  }
   setStatus(t("offlineCopy", { version: shortVersion(site.version), date: displayDate(site.date) }));
   if (site.siteUrl) {
     const runCheck = async (): Promise<void> => {
