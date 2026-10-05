@@ -288,15 +288,30 @@ def check_keyboard(page: Page, report: Report, label: str, phone: bool, limit_st
     if not total:
         report.add(Status.SKIP, f"{label}: keyboard walk", "nothing focusable")
         return
-    page.evaluate("document.activeElement && document.activeElement.blur()")
+    # Start from the TOP. blur() is not enough: Chrome keeps the blurred element
+    # as its "sequential focus navigation starting point", so Tab would resume
+    # where a scenario left focus (e.g. inside a popover that then closes, and
+    # the walk would wait forever for an element that no longer exists).
+    # Focusing a temporary marker placed first in the page — or first in an
+    # open modal dialog, the only focusable region then — resets that point.
+    page.evaluate("""() => {
+        const host = document.querySelector('dialog[open]') ?? document.body;
+        const marker = document.createElement('span');
+        marker.id = '__swp-walk-start';
+        marker.tabIndex = -1;
+        host.prepend(marker);
+        marker.focus({ preventScroll: true });
+    }""")
     visited: set[int] = set()
     invisible: list[str] = []
     obscured: list[str] = []
     first: int | None = None
     cycled = False
     stops = limit_stops or total * 2 + 10
-    for _ in range(stops):
+    for step in range(stops):
         page.keyboard.press("Tab")
+        if step == 0:
+            page.evaluate("document.getElementById('__swp-walk-start')?.remove()")
         state = page.evaluate(FOCUS_STATE_JS, [True])
         index = state["index"]
         if index < 0:
@@ -304,6 +319,13 @@ def check_keyboard(page: Page, report: Report, label: str, phone: bool, limit_st
         if first is None:
             first = index
         elif index == first:
+            cycled = True
+            break
+        elif index in visited and not page.evaluate(
+                "id => window.__swpTabbable().some(e => window.__swpId(e) === id)", first):
+            # The first element vanished during the walk (e.g. it lived in a
+            # popover that closed): coming back to any visited element closes
+            # the cycle. A real trap still fails "everything reachable".
             cycled = True
             break
         visited.add(index)

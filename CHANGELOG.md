@@ -4,6 +4,17 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## 1.3.2 — 2026-10-06
+
+Fixed
+- Keyboard walk reported a false trap after a scenario left focus inside a popover
+  that closes when focus moves elsewhere: `blur()` keeps Chrome's sequential focus
+  starting point, so the walk resumed inside the popover and waited for an element
+  that no longer existed. The walk now starts from a temporary marker placed first
+  in the page (or first in an open modal dialog), and if the first element has
+  vanished, coming back to any visited element closes the cycle. Real traps still
+  fail (verified with a field that swallows Tab).
+
 ## 1.3.1 — 2026-10-05
 
 Fixed
