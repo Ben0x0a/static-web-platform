@@ -59,7 +59,7 @@ release, and installs it through npm from that folder:
 
 ```bash
 git submodule add https://github.com/<owner>/static-web-platform.git platform
-git -C platform checkout v1.4.0
+git -C platform checkout v1.5.0
 ```
 ```jsonc
 // package.json of the app
@@ -105,6 +105,7 @@ keeps focused elements visible below it).
 | `siteUrl` | production URL ("" until known: no update check in the single file) |
 | `downloadName` | file name of the single-file download |
 | `entry` | bundler entry (default `src/main.ts`) |
+| `linkCheck` | `{ "sources": ["src/content.ts"], "output": "data/link-status.json" }`: links checked by `swp links` (status file read by a `core/` loader) |
 | `netOriginsFrom` | `[{ "data": "data/rdap-dns.json", "directive": "connect-src", "purpose": "…", "scope": "request" }]`: every https origin listed in that dataset, declared exactly (one group in *Privacy*) |
 | `netOrigins` | external servers: `{ "https://host": { "directive": "img-src", "purpose": "…", "scope": "origin"\|"request", "referrerPolicy": "no-referrer"\|"origin"\|"strict-origin" } }` |
 | `options` | the app's own options (typed by the app) |
@@ -189,6 +190,7 @@ From the app's root, with Node on PATH (`mise exec -- …`):
 | `npx swp gate` | the full verification gate (needs `scenarios.json`) |
 | `npx swp serve` | serve `public/` with its `_headers`, imitating Cloudflare's "pretty URLs" (`/x.html` → `/x`) |
 | `npx swp icons` | render the PNG icons from `src/icons/icon.svg` |
+| `npx swp links [--write] [--report FILE]` | check the app's outgoing links (site.json `linkCheck`); used by a weekly CI job |
 | `npx swp cors URL…` | before declaring an endpoint: does it answer CORS for the site and the single file (`Origin: null`)? |
 
 ## Developing the platform

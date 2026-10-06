@@ -4,6 +4,20 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## 1.5.0 — 2026-10-06
+
+Added
+- `swp links`: checks the app's outgoing links (site.json `"linkCheck": {"sources":
+  [...], "output": "data/link-status.json"}`) from where it runs — CI, never
+  visitors. Classification: ok (2xx after redirects; final address recorded),
+  broken (404/410/other errors, no answer), unknown (401/403/429/503: robots
+  blocked — never shown as broken). The status file is rewritten only when a status
+  changes; `--report` writes a Markdown summary for a pull request or an issue.
+  URLs in comments are ignored; IDN hosts and non-ASCII paths are handled; a
+  malformed address is one "broken" result, never an aborted run.
+- The `static-web-app` skill ships the matching weekly workflow
+  (`assets/workflows/links.yml`).
+
 ## 1.4.0 — 2026-10-06
 
 Security (behaviour change)

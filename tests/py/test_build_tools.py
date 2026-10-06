@@ -168,6 +168,7 @@ class PrettyUrlServeTest(unittest.TestCase):
                     self.assertIn("offline copy", response.read().decode())
             finally:
                 server.shutdown()
+                server.server_close()
 
 
 class CorsCheckTest(unittest.TestCase):
@@ -179,6 +180,7 @@ class CorsCheckTest(unittest.TestCase):
         (root / "_headers").write_text(rules, encoding="utf-8")
         server = make_server(root)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         return f"http://127.0.0.1:{server.server_port}/a.json"
 

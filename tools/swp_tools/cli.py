@@ -13,6 +13,8 @@ Commands (in workflow order):
   swp serve  [DIR] [PORT]   serve public/ with its _headers
   swp icons  [SVG]          render the PNG icons from src/icons/icon.svg
   swp cors   URL…           does each endpoint answer CORS for the site AND the single file?
+  swp links  [--write] [--report FILE] [--fail-on-broken]
+                            check the app's outgoing links (site.json "linkCheck"), from here
 Run from the app's root folder, with Node.js on PATH (e.g. `mise exec -- npx swp build`).
 """
 
@@ -59,6 +61,10 @@ def main(argv: list[str] | None = None) -> int:
     serve_cmd.add_argument("port", nargs="?", type=int, default=8765)
     cors_cmd = commands.add_parser("cors", help="check endpoints answer CORS for the site and the single file")
     cors_cmd.add_argument("urls", nargs="+")
+    links_cmd = commands.add_parser("links", help="check the app's outgoing links (site.json linkCheck)")
+    links_cmd.add_argument("--write", action="store_true", help="update the status file when a status changed")
+    links_cmd.add_argument("--report", type=pathlib.Path, help="write a Markdown summary (CI issue / PR body)")
+    links_cmd.add_argument("--fail-on-broken", action="store_true", help="exit 1 when a link is broken")
     icons_cmd = commands.add_parser("icons", help="render PNG icons from the SVG")
     icons_cmd.add_argument("svg", nargs="?", type=pathlib.Path, default=pathlib.Path("src/icons/icon.svg"))
     args = parser.parse_args(argv)
@@ -106,6 +112,28 @@ def main(argv: list[str] | None = None) -> int:
         if not site_origin(site):
             print("Note: site.json siteUrl is empty — only the single file (Origin: null) was checked.")
         return 0 if all(r.allowed for r in results) else 1
+    if args.command == "links":
+        from swp_tools.config import load_project
+        from swp_tools.links import check_links, extract_links, markdown_report, update_status_file
+        project = load_project(root)
+        spec = project.site.get("linkCheck")
+        if not spec:
+            raise SystemExit('site.json has no "linkCheck": {"sources": [...], "output": "data/link-status.json"}')
+        output = project.src / spec["output"]
+        # Invariant: the status file is a dataset (src/data/, SOURCES.md), read
+        # by a core/ loader — anywhere else it would bypass the data rules.
+        if not spec["output"].startswith("data/"):
+            raise SystemExit('linkCheck.output must be under src/data/ (e.g. "data/link-status.json")')
+        results = check_links(extract_links(project.root, spec["sources"]))
+        for r in results:
+            print(f"{r.status.upper():8} {r.url}  {r.detail}")
+        if args.report:
+            args.report.write_text(markdown_report(results), encoding="utf-8")
+        if args.write:
+            changed = update_status_file(output, results)
+            print(f"{output.relative_to(project.root)} {'updated' if changed else 'unchanged'}")
+        broken = sum(r.status == "broken" for r in results)
+        return 1 if args.fail_on_broken and broken else 0
     if args.command == "icons":
         from swp_tools.icons import render
         render(args.svg.resolve())
