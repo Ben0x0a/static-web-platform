@@ -4,6 +4,12 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## Unreleased
+
+Added
+- Apache-2.0 licence (`LICENSE`, `NOTICE`, `package.json` "license") and a legal
+  comment in `src/index.ts`, kept by bundlers in every app's `app.js`.
+
 ## 1.5.0 — 2026-10-06
 
 Added

@@ -219,6 +219,15 @@ breaking API, page contract or build contract = major), commit, and tag `vX.Y.Z`
 Apps update through Dependabot (`gitsubmodule`) or by hand, then rebuild `public/`
 and run the gate.
 
+## Licence
+
+Licensed under the [Apache License, Version 2.0](LICENSE). Copyright 2026 Ben0x0a (see
+[NOTICE](NOTICE)).
+
+Apps may use any licence of their own. Every app's `app.js` contains platform code, so
+it keeps the notice: `src/index.ts` starts with a `/*! … */` legal comment that
+bundlers preserve. Don't strip legal comments from app bundles.
+
 ## Development & AI use
 
 Generative AI was used in this project mainly to assist during the coding phase. The

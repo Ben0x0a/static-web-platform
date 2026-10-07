@@ -1,3 +1,7 @@
+/*! static-web-platform | Copyright 2026 Ben0x0a | Apache-2.0 | https://github.com/Ben0x0a/static-web-platform */
+// The "/*!" comment above is a legal comment: bundlers keep it in every app's
+// app.js, so redistributed copies carry the licence notice (Apache-2.0 § 4).
+
 /*
   index.ts — public API of static-web-platform (what apps import).
 
