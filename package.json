@@ -33,7 +33,7 @@
     "test": "node --test \"tests/ts/*.test.ts\" && python3 -m unittest discover -s tests/py -t tests/py"
   },
   "devDependencies": {
-    "@types/node": "24.19.1",
+    "@types/node": "26.6.4",
     "esbuild": "0.28.2",
     "typescript": "7.0.2"
   },
