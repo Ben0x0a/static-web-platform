@@ -59,7 +59,7 @@ release, and installs it through npm from that folder:
 
 ```bash
 git submodule add https://github.com/<owner>/static-web-platform.git platform
-git -C platform checkout v1.5.0
+git -C platform checkout v1.5.1
 ```
 ```jsonc
 // package.json of the app
