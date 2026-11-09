@@ -15,11 +15,19 @@ Defines : run_gate() and the checks below.
                     (WCAG 1.4.12), single keys inert when shortcuts are off
                     (2.1.4), focus visible in forced colours, offline reload,
                     privacy/accessibility/install dialogs scanned.
-          Single  : self-contained, no request on open, CSP, axe, labels,
-                    mobile, keyboard, update check asks consent first →
-                    "up to date" → "new version" after version.json changes.
+          Copy    : per site.json "distribution" —
+                    single: self-contained, no request on open, CSP, axe,
+                    labels, mobile, keyboard, update check asks consent first
+                    → "up to date" → "new version" after version.json changes;
+                    local-server: the zip downloaded from the page, its
+                    launcher started under Deno (127.0.0.1 only), foreign Host
+                    refused, then the same screen and update checks;
+                    site-only: no Download link.
+          CLI     : (site.json "cli") its link downloads the bundle; --help and
+                    --version run under Deno WITHOUT any permission.
 Used by : cli.py (`swp gate`), CI.
-Uses    : builder.py, config.py, serve.py; the app's scenarios.json;
+Uses    : builder.py, config.py, serve.py, package.py; the app's scenarios.json;
+          Deno on PATH for local-server and CLI apps (pinned in mise.toml);
           Playwright driving the installed Google Chrome; axe-core (pinned,
           SHA-256 verified, cached in ~/.cache, test-time only — never shipped).
 """
@@ -31,13 +39,20 @@ import json
 import logging
 import pathlib
 import re
+import shutil
+import socket
+import subprocess
 import tempfile
 import threading
+import time
+import urllib.error
 import urllib.request
+import zipfile
 
 from playwright.sync_api import Page, sync_playwright
 
 from swp_tools.builder import build, check
+from swp_tools.package import LAUNCH_COMMAND
 from swp_tools.config import load_project
 from swp_tools.serve import make_server
 
@@ -508,12 +523,54 @@ def check_offline(page: Page, context, report: Report) -> None:
         context.set_offline(False)
 
 
+def _download(page: Page, selector: str, target: pathlib.Path) -> pathlib.Path:
+    with page.expect_download() as info:
+        page.click(selector)
+    info.value.save_as(target)
+    return target
+
+
+def check_update(local: Page, watch: Watch, site_dir: pathlib.Path, report: Report, label: str) -> None:
+    """A local copy's update check: consent first, "up to date", then "new version" with a working download."""
+    if local.locator("#check-update").count() == 0:
+        report.add(Status.SKIP, f"{label}: update check", "no #check-update")
+    else:
+        t = lambda key: local.evaluate("k => window.__swpT?.(k) ?? null", key)  # noqa: E731
+        local.click("#check-update")
+        local.wait_for_function("document.getElementById('consent-dialog')?.open === true", timeout=5000)
+        report.check(not watch.external, f"{label}: update check asks consent BEFORE any request",
+                     ", ".join(watch.external))
+        local.click("#consent-dialog [data-answer='session']")
+        local.wait_for_function("s => document.getElementById('status').textContent.includes(s)",
+                                arg=t("upToDate"), timeout=10000)
+        report.check(True, f"{label}: unchanged site → up to date")
+        version_file = site_dir / "version.json"
+        original = version_file.read_text(encoding="utf-8")
+        version_file.write_text(json.dumps({**json.loads(original), "version": "simulated-new"}), encoding="utf-8")
+        try:
+            local.click("#check-update")
+            local.wait_for_function("s => document.getElementById('status').textContent.includes(s)",
+                                    arg=t("updateAvailable"), timeout=10000)
+            report.check(True, f"{label}: new version on the site → notice shown")
+            # The notice's link must give a NEW OFFLINE COPY, not open the app:
+            # follow it like a browser (redirects included — Cloudflare turns
+            # /x.html into /x) and require the file served as an attachment.
+            href = local.evaluate("document.querySelector('#status a')?.href ?? ''")
+            try:
+                with urllib.request.urlopen(href, timeout=10) as response:
+                    disposition = response.headers.get("Content-Disposition", "")
+                    final_url = response.url
+            except Exception as err:                 # unreachable link = fail, with the reason
+                disposition, final_url = "", f"{href} ({err})"
+            report.check("attachment" in disposition, f"{label}: update notice link downloads the new copy",
+                         f"{final_url} answered without Content-Disposition: attachment ({disposition or 'none'})")
+        finally:
+            version_file.write_text(original, encoding="utf-8")
+
+
 def check_single_file(page: Page, context, site_dir: pathlib.Path, origin: str, work: pathlib.Path,
                       axe_src: str, report: Report) -> None:
-    with page.expect_download() as info:
-        page.click("#download")
-    copy = work / "copy.download.html"
-    info.value.save_as(copy)
+    copy = _download(page, "#download", work / "copy.download.html")
     html = copy.read_text(encoding="utf-8")
     external_refs = re.findall(r'<(?:script[^>]+src|link[^>]+rel="(?:stylesheet|manifest|apple-touch-icon)")[^>]*>', html)
     report.check(not external_refs, "single file: self-contained", ", ".join(external_refs))
@@ -531,41 +588,106 @@ def check_single_file(page: Page, context, site_dir: pathlib.Path, origin: str, 
     check_phone_rules(local, report, "single file phone")
     local.set_viewport_size(DESKTOP)
 
-    if local.locator("#check-update").count() == 0:
-        report.add(Status.SKIP, "single file: update check", "no #check-update")
-    else:
-        t = lambda key: local.evaluate("k => window.__swpT?.(k) ?? null", key)  # noqa: E731
-        local.click("#check-update")
-        local.wait_for_function("document.getElementById('consent-dialog')?.open === true", timeout=5000)
-        report.check(not watch.external, "single file: update check asks consent BEFORE any request",
-                     ", ".join(watch.external))
-        local.click("#consent-dialog [data-answer='session']")
-        local.wait_for_function("s => document.getElementById('status').textContent.includes(s)",
-                                arg=t("upToDate"), timeout=10000)
-        report.check(True, "single file: unchanged site → up to date")
-        version_file = site_dir / "version.json"
-        original = version_file.read_text(encoding="utf-8")
-        version_file.write_text(json.dumps({**json.loads(original), "version": "simulated-new"}), encoding="utf-8")
-        try:
-            local.click("#check-update")
-            local.wait_for_function("s => document.getElementById('status').textContent.includes(s)",
-                                    arg=t("updateAvailable"), timeout=10000)
-            report.check(True, "single file: new version on the site → notice shown")
-            # The notice's link must give a NEW OFFLINE COPY, not open the app:
-            # follow it like a browser (redirects included — Cloudflare turns
-            # /x.html into /x) and require the file served as an attachment.
-            href = local.evaluate("document.querySelector('#status a')?.href ?? ''")
-            try:
-                with urllib.request.urlopen(href, timeout=10) as response:
-                    disposition = response.headers.get("Content-Disposition", "")
-                    final_url = response.url
-            except Exception as err:                 # unreachable link = fail, with the reason
-                disposition, final_url = "", f"{href} ({err})"
-            report.check("attachment" in disposition, "single file: update notice link downloads the new copy",
-                         f"{final_url} answered without Content-Disposition: attachment ({disposition or 'none'})")
-        finally:
-            version_file.write_text(original, encoding="utf-8")
+    check_update(local, watch, site_dir, report, "single file")
     check_reflow(local, report, "single file")
+
+
+LAUNCHER_START_SECONDS = 15
+
+
+def _free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _deno(report: Report, label: str) -> str | None:
+    deno = shutil.which("deno")
+    report.check(deno is not None, f"{label}: Deno available",
+                 'deno not on PATH: pin it in the app\'s mise.toml (deno = "2.9.8") and run through mise')
+    return deno
+
+
+def check_local_server(page: Page, context, site_dir: pathlib.Path, origin: str, work: pathlib.Path,
+                       axe_src: str, report: Report) -> None:
+    label = "local copy"
+    deno = _deno(report, label)
+    if deno is None:
+        return
+    archive = _download(page, "#download", work / "local.zip")
+    with zipfile.ZipFile(archive) as zipped:
+        zipped.extractall(work / "local")
+    launchers = list((work / "local").glob("*/serve.js"))
+    if not report.check(len(launchers) == 1, f"{label}: zip holds one launcher", f"found {len(launchers)} serve.js"):
+        return
+    folder = launchers[0].parent
+    port = _free_port()
+    launcher = subprocess.Popen([deno, *LAUNCH_COMMAND.split()[1:], "--port", str(port)], cwd=folder,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    local_origin = f"http://127.0.0.1:{port}"
+    try:
+        deadline = time.monotonic() + LAUNCHER_START_SECONDS
+        started = False
+        while not started and time.monotonic() < deadline and launcher.poll() is None:
+            try:
+                with urllib.request.urlopen(local_origin + "/", timeout=2):
+                    started = True
+            except OSError:
+                time.sleep(0.2)
+        if not report.check(started, f"{label}: launcher serves the page with only --allow-net=127.0.0.1 --allow-read=.",
+                            launcher.stdout.read() if launcher.poll() is not None and launcher.stdout else "no answer"):
+            return
+        foreign = urllib.request.Request(local_origin + "/", headers={"Host": f"evil.example:{port}"})
+        try:
+            urllib.request.urlopen(foreign, timeout=5)
+            refused, detail = False, "answered a foreign Host header"
+        except urllib.error.HTTPError as err:
+            refused, detail = err.code == 421, f"HTTP {err.code} instead of 421"
+        except OSError as err:                       # connection dropped: a result, not a crash
+            refused, detail = False, f"no HTTP answer ({err})"
+        report.check(refused, f"{label}: foreign Host refused with 421 (DNS rebinding)", detail)
+
+        local = context.new_page()
+        watch = watch_page(local, local_origin)
+        local.goto(local_origin + "/")
+        local.wait_for_load_state("networkidle")
+        report.check(not watch.external, f"{label}: no request on open", ", ".join(watch.external))
+        report.check(local.evaluate("window.__SWP_SITE__?.mode") == "local", f"{label}: page runs in local mode")
+        settle_consent(local, watch, axe_src, report, label)
+        check_declarations(local, report, label, allowed_extra={(origin, "connect-src")})
+        check_screen(local, watch, axe_src, report, f"{label} desktop", phone=False, typed=[])
+        check_support_link(local, report, label)
+        local.set_viewport_size(PHONE)
+        check_phone_rules(local, report, f"{label} phone")
+        local.set_viewport_size(DESKTOP)
+        check_update(local, watch, site_dir, report, label)
+        check_reflow(local, report, label)
+        local.close()
+    finally:
+        launcher.terminate()
+        launcher.wait(timeout=10)
+        if launcher.stdout:
+            launcher.stdout.close()
+
+
+def check_cli(page: Page, project, site_dir: pathlib.Path, work: pathlib.Path, report: Report) -> None:
+    label = "command line"
+    if not report.check(page.locator("#download-cli").count() == 1, f"{label}: download link on the site"):
+        return
+    deno = _deno(report, label)
+    if deno is None:
+        return
+    bundle = _download(page, "#download-cli", work / project.cli_filename)
+    version = json.loads((site_dir / "version.json").read_text(encoding="utf-8"))["version"]
+    # No permission flag at all: --help and --version must need none, and
+    # --no-prompt turns any attempt into an error instead of a question.
+    base = [deno, "run", "--no-config", "--no-prompt", str(bundle)]
+    shown = subprocess.run([*base, "--help"], capture_output=True, text=True, timeout=60)
+    report.check(shown.returncode == 0 and "Usage:" in shown.stdout, f"{label}: --help without permissions",
+                 (shown.stderr or shown.stdout).strip()[:300])
+    printed = subprocess.run([*base, "--version"], capture_output=True, text=True, timeout=60)
+    report.check(printed.returncode == 0 and version in printed.stdout, f"{label}: --version prints the site's version",
+                 f"expected {version}, got {(printed.stdout or printed.stderr).strip()[:200]}")
 
 
 def run_gate(root: pathlib.Path) -> Report:
@@ -616,7 +738,14 @@ def run_gate(root: pathlib.Path) -> Report:
                 page.reload()
                 check_single_keys_inert(page, report, "site")
                 check_offline(page, context, report)
-                check_single_file(page, context, site_dir, origin, work, axe_src, report)
+                if project.distribution == "single":
+                    check_single_file(page, context, site_dir, origin, work, axe_src, report)
+                elif project.distribution == "local-server":
+                    check_local_server(page, context, site_dir, origin, work, axe_src, report)
+                else:
+                    report.check(page.locator("#download").count() == 0, "site-only: no Download link")
+                if project.cli_entry is not None:
+                    check_cli(page, project, site_dir, work, report)
                 check_reflow(page, report, "site")
                 context.close()
 

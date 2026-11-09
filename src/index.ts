@@ -11,7 +11,9 @@
 */
 export { startPlatform } from "./platform.ts";
 export type { Platform, StartOptions } from "./platform.ts";
-export type { SiteConfig, NetOrigin, VersionInfo, CspDirective, ConsentScope, ReferrerChoice } from "./core/types.ts";
+export type { SiteConfig, NetOrigin, VersionInfo, CspDirective, ConsentScope, ReferrerChoice, Distribution,
+              PageMode } from "./core/types.ts";
+export { isLocalCopy, servesFiles } from "./core/types.ts";
 export type { Consent, ConsentOptions } from "./services/consent.ts";
 export type { StringTable } from "./core/i18n.ts";
 export { createRegistry } from "./core/registry.ts";

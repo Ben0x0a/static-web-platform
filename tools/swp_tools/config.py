@@ -1,6 +1,6 @@
 """config.py — the Project data container: an app's paths and validated site.json.
 
-Defines : Project, load_project(), PLATFORM_PACKAGE_NAME.
+Defines : Project, load_project(), PLATFORM_PACKAGE_NAME, PLATFORM_CLI_ENTRY.
 Used by : version.py, bundle.py, assemble.py, builder.py, gate.py, cli.py.
 Uses    : the app's src/site.json; node_modules/static-web-platform (the
           installed platform, possibly a symlink for a local file: dependency).
@@ -13,8 +13,13 @@ import re
 import urllib.parse
 
 PLATFORM_PACKAGE_NAME = "static-web-platform"
+PLATFORM_CLI_ENTRY = PLATFORM_PACKAGE_NAME + "/cli"   # the command-line shell's only platform import
 SITE_FILENAME = "site.json"
-REQUIRED_SITE_KEYS = ("id", "title", "shortName", "lang", "themeColor", "siteUrl", "downloadName", "netOrigins", "options")
+REQUIRED_SITE_KEYS = ("id", "title", "shortName", "lang", "themeColor", "siteUrl", "netOrigins", "options")
+# What the local copy is (site.json "distribution"): the single HTML file, a zip
+# with a local server (apps that need a real origin), or none (hosted site only).
+DISTRIBUTIONS = ("single", "local-server", "site-only")
+DEFAULT_DISTRIBUTION = "single"
 DEFAULT_ENTRY = "src/main.ts"
 DEFAULT_APP_BUILD_DIR = "build/app"
 
@@ -55,6 +60,31 @@ class Project:
     @property
     def precache_assets(self) -> bool:
         return bool(self.site.get("precacheAssets", False))
+
+    @property
+    def distribution(self) -> str:
+        return self.site.get("distribution", DEFAULT_DISTRIBUTION)
+
+    @property
+    def cli_entry(self) -> pathlib.Path | None:
+        """The command-line shell's entry (site.json "cli": {"entry": …}), or None."""
+        cli = self.site.get("cli")
+        return self.root / cli["entry"] if cli else None
+
+    @property
+    def cli_filename(self) -> str:
+        """Published name of the CLI bundle (also the app's library for other programs)."""
+        return f"{self.site['id']}-cli.js"
+
+    @property
+    def local_zip_filename(self) -> str:
+        """Published name of the local-server package (distribution "local-server")."""
+        return f"{self.site['id']}-local.zip"
+
+    @property
+    def download_filename(self) -> str | None:
+        """What the Download link fetches: the single file, the zip, or nothing."""
+        return {"single": self.site.get("downloadName"), "local-server": self.local_zip_filename}.get(self.distribution)
 
     @property
     def app_build_dir(self) -> pathlib.Path:
@@ -150,6 +180,23 @@ def load_project(root: pathlib.Path, site_url_override: str | None = None) -> Pr
     expand_net_origins_from(site, root, site_path)
     validate_net_origins(site["netOrigins"], site_path)
     validate_support(site.get("support"), site_path)
+    distribution = site.get("distribution", DEFAULT_DISTRIBUTION)
+    if distribution not in DISTRIBUTIONS:
+        raise SystemExit(f'{site_path}: "distribution" must be one of {", ".join(DISTRIBUTIONS)}')
+    # Invariant: only the single file is named by the app; the other profiles
+    # either derive their file name from the id or publish no download.
+    if distribution == "single" and not site.get("downloadName"):
+        raise SystemExit(f'{site_path}: "downloadName" is required with the "single" distribution')
+    if "cli" in site:
+        cli = site["cli"]
+        entry = cli.get("entry") if isinstance(cli, dict) else None
+        entry_path = (root / entry).resolve() if isinstance(entry, str) and entry else None
+        # Invariant: the entry is a file inside src/cli/, the layer whose imports
+        # and runtime APIs are checked. The path is resolved first, so
+        # "src/cli/../x.ts" cannot slip the bundle past those checks.
+        if (entry_path is None or not entry_path.is_file()
+                or not entry_path.is_relative_to((root / "src" / "cli").resolve())):
+            raise SystemExit(f'{site_path}: "cli" must be {{"entry": "src/cli/<file>.ts"}} naming an existing file')
     for mode in site.get("modes", []):
         # Invariant: a declared mode is a folder of core/ — a typo would silently
         # leave the real folder unprotected.

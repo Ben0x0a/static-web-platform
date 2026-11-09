@@ -1,15 +1,15 @@
 """cors.py — check that external endpoints answer CORS for BOTH outputs (swp cors).
 
-Defines : check_cors(), CorsResult.
+Defines : check_cors(), copy_origins(), CorsResult.
 Used by : cli.py (`swp cors <url> …`), run by the developer BEFORE declaring
           an endpoint in site.json netOrigins.
 Uses    : the network (this is a developer tool, never part of the app);
           config.Project for siteUrl.
 
-WHY both origins: the hosted site sends Origin: https://<site>, but the
-downloaded single file runs from file:// and sends Origin: null. A server that
-answers "*" works for both; one that only echoes known sites back fails in
-the single file. Only simple GET requests are checked (what platform.net
+WHY several origins: the hosted site sends Origin: https://<site>, but a local
+copy sends its own — the single file runs from file:// (Origin: null), the
+local-server copy from http://127.0.0.1:<port>. A server that answers "*" works
+for all; one that only echoes known sites back fails in the copies. Only simple GET requests are checked (what platform.net
 sends without extra headers); a request with custom headers would also need
 a preflight.
 """
@@ -17,6 +17,9 @@ a preflight.
 import dataclasses
 import urllib.error
 import urllib.request
+
+from swp_tools.config import Project
+from swp_tools.package import default_port
 
 ORIGIN_NULL = "null"
 
@@ -43,6 +46,13 @@ def _probe(url: str, origin: str) -> CorsResult:
     return CorsResult(url, origin, allowed, f"HTTP {status}, Access-Control-Allow-Origin: {allow or '(none)'}")
 
 
-def check_cors(urls: list[str], site_origin: str | None) -> list[CorsResult]:
-    origins = ([site_origin] if site_origin else []) + [ORIGIN_NULL]
+def copy_origins(project: Project | None) -> list[str]:
+    """The Origin the app's local copy sends (site.json "distribution"); the single file's without an app."""
+    distribution = project.distribution if project else "single"
+    if distribution == "local-server":
+        return [f"http://127.0.0.1:{default_port(project)}"]
+    return [ORIGIN_NULL] if distribution == "single" else []
+
+
+def check_cors(urls: list[str], origins: list[str]) -> list[CorsResult]:
     return [_probe(url, origin) for url in urls for origin in origins]

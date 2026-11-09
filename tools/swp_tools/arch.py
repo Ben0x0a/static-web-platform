@@ -13,32 +13,39 @@ Layers (by first folder under src/; anything else at the root is "app"):
             EXCEPT the modes declared in site.json "modes": a core/<mode>/ folder
             never imports another declared mode (shared code lives outside them).
             No DOM either: checked separately by type-checking core/ without
-            the DOM library (bundle.check_core_is_pure).
+            the DOM library (bundle.check_pure_layers).
   ui        shared display helpers: core, ui, the platform.
   state     shared state/stores: core, state, the platform.
   features  one capability each: core, ui, state, the platform, and its OWN
             files (features/<name>.ts, features/<name>/…) — never another feature.
-  workers   Web Worker entries: core, workers (no platform, no DOM).
-  app       main.ts, content.ts, migrations…: anything.
-The platform is imported only as "static-web-platform" (its public API),
-never by deep path.
+  workers   Web Worker entries: core, api, workers (no platform, no DOM).
+  api       the app's operations (its programmatic API): core, api. Pure and
+            runtime-neutral, type-checked without the DOM like core/.
+  cli       the command-line shell: api, core, cli, and the platform's CLI
+            entry "static-web-platform/cli" only. Type-checked without the DOM
+            and with only the Deno file and stream APIs, so network code fails.
+  app       main.ts, content.ts, migrations…: anything except data/ and cli/.
+The platform is imported only through its public entries: "static-web-platform"
+(page layers) and "static-web-platform/cli" (cli/), never by deep path.
 """
 
 import pathlib
 import re
 
-from swp_tools.config import PLATFORM_PACKAGE_NAME, Project
+from swp_tools.config import PLATFORM_CLI_ENTRY, PLATFORM_PACKAGE_NAME, Project
 
 SOURCE_SUFFIXES = {".ts", ".tsx", ".js", ".jsx", ".mts", ".svelte", ".vue"}
-LAYERS = ("core", "data", "ui", "state", "features", "workers")
+LAYERS = ("core", "data", "api", "cli", "ui", "state", "features", "workers")
 LAYER_RULES: dict[str, set[str]] = {
     "core": {"core", "data"},
     "data": set(),
     "ui": {"core", "ui", "platform"},
     "state": {"core", "state", "platform"},
-    "features": {"core", "ui", "state", "platform", "features"},   # features: own folder only (below)
-    "workers": {"core", "workers"},
-    "app": {"core", "ui", "state", "features", "workers", "platform", "app"},   # not data: go through core
+    "api": {"core", "api"},
+    "cli": {"api", "core", "cli", "platform-cli"},
+    "features": {"core", "api", "ui", "state", "platform", "features"},   # features: own folder only (below)
+    "workers": {"core", "api", "workers"},
+    "app": {"core", "api", "ui", "state", "features", "workers", "platform", "app"},   # not data, not cli
 }
 IMPORT_PATTERNS = [
     re.compile(r"""(?:import|export)\s[^'";]*?\sfrom\s*['"]([^'"]+)['"]"""),
@@ -92,10 +99,12 @@ def check_architecture(project: Project) -> None:
                       and _core_mode(rel, modes) != _core_mode(target, modes)):
                     problems.append(f"{rel}: modes never import each other ({target}) — share via code outside the modes")
             elif spec == PLATFORM_PACKAGE_NAME or spec.startswith(PLATFORM_PACKAGE_NAME + "/"):
-                if spec != PLATFORM_PACKAGE_NAME:
-                    problems.append(f"{rel}: import the platform's public API only ('{PLATFORM_PACKAGE_NAME}'), not {spec}")
-                elif "platform" not in LAYER_RULES[layer]:
-                    problems.append(f"{rel} ({layer}) may not use the platform")
+                entry = {PLATFORM_PACKAGE_NAME: "platform", PLATFORM_CLI_ENTRY: "platform-cli"}.get(spec)
+                if entry is None:
+                    problems.append(f"{rel}: import the platform's public entries only ('{PLATFORM_PACKAGE_NAME}', "
+                                    f"'{PLATFORM_CLI_ENTRY}'), not {spec}")
+                elif entry not in LAYER_RULES[layer]:
+                    problems.append(f"{rel} ({layer}) may not use '{spec}'")
             # other bare specifiers: npm packages (pure ones are fine in core; DOM use is caught by the core check)
     if problems:
         raise SystemExit("Architecture rules broken (static-web-app skill, dependency rules):\n  " + "\n  ".join(problems))

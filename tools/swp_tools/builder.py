@@ -1,12 +1,14 @@
 """builder.py — build / check / verify orchestration.
 
-Defines : build(), check(), verify().
+Defines : build(), build_dev(), check(), verify().
 Used by : cli.py (`swp build|check|verify`), gate.py (fresh test builds).
-Uses    : config, version, bundle, assemble.
+Uses    : config, version, bundle, assemble, package.
 
 Outputs in public/: index.html + config.js + app.js + base.css (+ app.css) +
-sw.js + manifest.webmanifest + _headers + icons/ (hosted site), the
-single-file download (<downloadName>), and version.json.
+sw.js + manifest.webmanifest + _headers + icons/ (hosted site); the local
+copy chosen by site.json "distribution" — the single file (<downloadName>),
+or <id>-local.zip (local server), or none; <id>-cli.js when the app has a
+command line; and version.json (version, date, files and their SHA-256).
 """
 
 import datetime
@@ -20,13 +22,61 @@ import tempfile
 from swp_tools.assemble import (VERSION_FILENAME, config_js, headers_file, manifest_json, platform_css,
                                 render_page, service_worker)
 from swp_tools.arch import check_architecture
-from swp_tools.bundle import bundle_app, check_node, typecheck
+from swp_tools.bundle import AppBundle, bundle_app, bundle_cli, bundle_launcher, check_node, typecheck
 from swp_tools.config import Project, load_project
 from swp_tools.data import check_datasets, resolve_assets
+from swp_tools.package import local_zip
 from swp_tools.version import source_version
 
 _LOG = logging.getLogger("swp.build")
 ICON_FILES = ("icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png")
+
+
+def _sha256(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _shared_files(project: Project, bundle: AppBundle, assets: list[str]) -> dict[str, bytes]:
+    """Files identical on the hosted site and in the local-server copy (read once)."""
+    files: dict[str, bytes] = {
+        "app.js": bundle.js.encode("utf-8"),
+        "base.css": platform_css(project).encode("utf-8"),
+        "manifest.webmanifest": manifest_json(project.site).encode("utf-8"),
+    }
+    if bundle.css:
+        files["app.css"] = bundle.css.encode("utf-8")
+    for name, code in bundle.workers.items():
+        files[f"workers/{name}.js"] = code.encode("utf-8")
+    for name in ICON_FILES:
+        source = project.src / "icons" / name
+        if not source.is_file():
+            raise SystemExit(f"{source} missing (render the PNGs with `swp icons`)")
+        files[f"icons/{name}"] = source.read_bytes()
+    for asset in assets:                         # served files only (never in the single file)
+        files[asset] = (project.src / asset).read_bytes()
+    return files
+
+
+def _page_files(project: Project, mode: str, bundle: AppBundle, version: str, date: str,
+                assets: list[str]) -> dict[str, bytes]:
+    """What differs between the hosted site ("site") and the local-server copy ("local")."""
+    return {
+        "index.html": render_page(project, mode, bundle, version, date, assets).encode("utf-8"),
+        "config.js": config_js(project, mode, version, date, assets).encode("utf-8"),
+        # The local copy keeps the security headers (the launcher applies them)
+        # but has no download of its own.
+        "_headers": headers_file(project.download_filename if mode == "site" else None).encode("utf-8"),
+    }
+
+
+# version.json "download" when the app has no local copy: the site's home page.
+# WHY not null: single files built before 2.0 read it as `new URL(download, site)`,
+# and would otherwise point their update notice at <site>/null.
+NO_DOWNLOAD = "./"
 
 
 def build(project: Project, out: pathlib.Path, date: str | None = None) -> None:
@@ -44,46 +94,37 @@ def build(project: Project, out: pathlib.Path, date: str | None = None) -> None:
         if any(out.iterdir()) and not (out / VERSION_FILENAME).is_file():
             raise SystemExit(f"Refusing to overwrite {out}: not a build output (no {VERSION_FILENAME})")
         shutil.rmtree(out)
-    (out / "icons").mkdir(parents=True)
-    for name in ICON_FILES:
-        source = project.src / "icons" / name
-        if not source.is_file():
-            raise SystemExit(f"{source} missing (render the PNGs with `swp icons`)")
-        shutil.copy2(source, out / "icons" / name)
 
-    site = project.site
-    files = {
-        "index.html": render_page(project, "site", bundle, version, date, assets),
-        "config.js": config_js(site, "site", version, date, assets),
-        "app.js": bundle.js,
-        "base.css": platform_css(project),
-        "manifest.webmanifest": manifest_json(site),
-        "_headers": headers_file(site),
-    }
-    if bundle.css:
-        files["app.css"] = bundle.css
-    for name, code in bundle.workers.items():
-        files[f"workers/{name}.js"] = code
-    for asset in assets:                         # hosted site only (never in the single file)
-        (out / asset).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(project.src / asset, out / asset)
-    single = render_page(project, "single", bundle, version, date, assets)
-    files[site["downloadName"]] = single
+    shared = _shared_files(project, bundle, assets)
+    files = {**shared, **_page_files(project, "site", bundle, version, date, assets)}
     precache = ["./", "config.js", "app.js", "base.css", *(["app.css"] if bundle.css else []),
                 "manifest.webmanifest", *(f"icons/{name}" for name in ICON_FILES),
                 *(f"workers/{name}.js" for name in sorted(bundle.workers)),
                 *(assets if project.precache_assets else [])]
-    files["sw.js"] = service_worker(project, version, precache)
-    sha256 = hashlib.sha256(single.encode("utf-8")).hexdigest()
-    files[VERSION_FILENAME] = json.dumps({"version": version, "date": date, "download": site["downloadName"],
-                                          "sha256": sha256}, indent=2) + "\n"
-    for name, text in files.items():
+    files["sw.js"] = service_worker(project, version, precache).encode("utf-8")
+    download = project.download_filename
+    if project.distribution == "single":
+        files[download] = render_page(project, "single", bundle, version, date, assets).encode("utf-8")
+    if project.cli_entry is not None:
+        files[project.cli_filename] = bundle_cli(project, version, date).encode("utf-8")
+    for name, data in files.items():
         (out / name).parent.mkdir(parents=True, exist_ok=True)
-        (out / name).write_text(text, encoding="utf-8")
-    if not site["siteUrl"]:
-        _LOG.warning("site.json siteUrl is empty: the downloaded file will not offer update checks")
-    _LOG.info(f"Built {out} — version {version}; download {site['downloadName']} sha256 {sha256}; "
-              f"app.js {len(bundle.js.encode('utf-8')):,} bytes, app.css {len(bundle.css.encode('utf-8')):,} bytes")
+        (out / name).write_bytes(data)
+    if project.distribution == "local-server":
+        local = {**shared, **_page_files(project, "local", bundle, version, date, assets)}
+        local_zip(project, local, bundle_launcher(project), out / download)
+
+    download_sha = _sha256(out / download) if download else None
+    cli = {"file": project.cli_filename, "sha256": _sha256(out / project.cli_filename)} if project.cli_entry else None
+    (out / VERSION_FILENAME).write_text(json.dumps({
+        "version": version, "date": date, "download": download or NO_DOWNLOAD, "sha256": download_sha, "cli": cli,
+    }, indent=2) + "\n", encoding="utf-8", newline="\n")
+    if not project.site["siteUrl"]:
+        _LOG.warning("site.json siteUrl is empty: local copies will not offer update checks")
+    _LOG.info(f"Built {out} — version {version}; distribution {project.distribution}"
+              + (f", download {download} sha256 {download_sha}" if download else "")
+              + (f", cli {cli['file']}" if cli else "")
+              + f"; app.js {len(bundle.js.encode('utf-8')):,} bytes, app.css {len(bundle.css.encode('utf-8')):,} bytes")
 
 
 def build_dev(project: Project, out: pathlib.Path) -> None:
@@ -93,7 +134,7 @@ def build_dev(project: Project, out: pathlib.Path) -> None:
     """
     out.mkdir(parents=True, exist_ok=True)
     assets = resolve_assets(project)
-    (out / "config.js").write_text(config_js(project.site, "dev", "dev", datetime.date.today().isoformat(), assets),
+    (out / "config.js").write_text(config_js(project, "dev", "dev", datetime.date.today().isoformat(), assets),
                                    encoding="utf-8")
     (out / "base.css").write_text(platform_css(project), encoding="utf-8")
     _LOG.info(f"Dev files written to {out} (config.js, base.css)")

@@ -4,6 +4,45 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## 2.0.0 — 2026-11-09
+
+Breaking
+- `SiteConfig.downloadName` is replaced by `download` (the file the Download link
+  fetches, or `null`), with `distribution` and `cli`. `VersionInfo.sha256` may be
+  `null` (`download` is then `"./"`, the site's home page, so copies built before
+  2.0 still get a valid link), and `VersionInfo.cli` lists the command-line bundle.
+- `site.json` `downloadName` is required only with the `"single"` distribution.
+- Layer-check messages name the import refused (`(core) may not use
+  'static-web-platform'`).
+
+Added
+- **Distribution profiles** (`site.json` `"distribution"`): `"single"` (default, the
+  single HTML file), `"local-server"` (`<id>-local.zip`: the page in the new mode
+  `"local"` plus a platform launcher run with
+  `deno run --no-config --no-prompt --allow-net=127.0.0.1 --allow-read=. serve.js`;
+  127.0.0.1 only, foreign `Host` refused, `_headers` applied, no CORS, no request
+  log; each app has its own default port, derived from its id, in 29170–29998 — a
+  block the IANA registry leaves unassigned — and the next free port of the block
+  is used when it is taken; `--port N` forces one), `"site-only"` (no local copy). The zip is reproducible (stored entries, fixed
+  dates and attributes) and its SHA-256 is in `version.json`.
+- **App layers `api/` and `cli/`**: `api/` holds the app's operations (its
+  programmatic API), pure and type-checked without the DOM like `core/`; `cli/` is a
+  command-line shell over `api/`, type-checked against the Deno file and stream APIs
+  only, so network code fails the build.
+- **`static-web-platform/cli`**: `startCli()` gives every app the same command line
+  (`--help`, `--version`, `FILE` or `-`, `--format json|text`, `--out` / `--force`,
+  exit codes 0/1/2/3); `runCli()` is the same logic with injected I/O.
+  `site.json` `"cli": {"entry": "src/cli/main.ts"}` publishes `<id>-cli.js`, which
+  is also the app's library, and the site gets a "Command line" link
+  (`#download-cli`).
+- Gate: the local-server copy (launcher started from the downloaded zip, foreign
+  `Host`, screens, consent and update checks), `site-only` (no Download link), and
+  the command line (`--help` and `--version` under Deno without any permission).
+- `swp cors` checks the Origin of the app's own local copy (`null` for the single
+  file, `http://127.0.0.1:<port>` for the local-server copy).
+- `isLocalCopy()` and `servesFiles()` exported; `Distribution` and `PageMode` types.
+- `mise.toml` pins Deno 2.9.8 (LTS) next to Node.
+
 ## 1.5.1 — 2026-10-07
 
 Added

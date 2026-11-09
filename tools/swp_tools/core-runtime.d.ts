@@ -1,18 +1,20 @@
 /*
-  core-runtime.d.ts — the runtime APIs src/core/ may use (type declarations only).
+  core-runtime.d.ts — the runtime APIs src/core/, src/api/ and src/cli/ may use
+  (type declarations only).
 
   Defines : TextEncoder, TextDecoder, structuredClone, crypto (getRandomValues,
             randomUUID, subtle.digest).
-  Used by : bundle.check_core_is_pure (added to the core-only type check, which
-            otherwise has no DOM and no Node types).
+  Used by : bundle.check_pure_layers (added to the type checks of core/, api/
+            and cli/, which otherwise have no DOM and no Node types).
   Uses    : nothing.
 
-  WHY a curated list: core/ must run in the page, in Web Workers and in Node
-  (unit tests). These APIs exist in all three; TypeScript only declares them
-  in its DOM library, which the purity check removes on purpose. Anything
-  NOT listed here (document, window, fetch, storage…) stays an error in
-  core/. Extend this list only with APIs available in all three runtimes.
-  Signatures mirror TypeScript's DOM library, narrowed to what core/ needs.
+  WHY a curated list: core/ and api/ must run in the page, in Web Workers,
+  in Node (unit tests) and in Deno (the CLI). These APIs exist in all four;
+  TypeScript only declares them in its DOM library, which the purity check
+  removes on purpose. Anything NOT listed here (document, window, fetch,
+  storage…) stays an error in those layers. Extend this list only with APIs
+  available in all four runtimes. Signatures mirror TypeScript's DOM library,
+  narrowed to what these layers need.
 */
 
 interface TextEncoderEncodeIntoResult { read: number; written: number }

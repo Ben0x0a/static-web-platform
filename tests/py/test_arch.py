@@ -38,6 +38,12 @@ GOOD = {
     "features/search.ts": 'import { el } from "static-web-platform";\nimport { parse } from "../core/ids/parse.ts";',
     "workers/solver.ts": 'import { parse } from "../core/ids/parse.ts";',
     "main.ts": 'import { search } from "./features/search.ts";\nimport { notes } from "./features/notes/notes.ts";',
+    "api/index.ts": 'import { parse } from "../core/ids/parse.ts";\nimport { run } from "./run.ts";',
+    "api/run.ts": 'import type { X } from "../core/types.ts";',
+    "cli/main.ts": ('import { startCli } from "static-web-platform/cli";\nimport { run } from "../api/index.ts";\n'
+                    'import type { X } from "../core/types.ts";'),
+    "features/analyse.ts": 'import { run } from "../api/index.ts";',
+    "workers/analyse.ts": 'import { run } from "../api/run.ts";',
 }
 
 
@@ -55,7 +61,7 @@ class ArchTest(unittest.TestCase):
                            "features never import other features")
 
     def test_core_using_the_platform(self):
-        self.assert_broken({"core/x.ts": 'import { el } from "static-web-platform";'}, "may not use the platform")
+        self.assert_broken({"core/x.ts": 'import { el } from "static-web-platform";'}, "(core) may not use 'static-web-platform'")
 
     def test_core_importing_ui(self):
         self.assert_broken({"core/x.ts": 'import { frame } from "../ui/frame.ts";'}, "(core) may not import")
@@ -73,13 +79,33 @@ class ArchTest(unittest.TestCase):
 
     def test_deep_platform_import(self):
         self.assert_broken({"features/search.ts": 'import { x } from "static-web-platform/src/ui/dom.ts";'},
-                           "public API only")
+                           "public entries only")
 
     def test_feature_reading_a_dataset_directly(self):
         self.assert_broken({"features/search.ts": 'import rows from "../data/rows.json";'}, "may not import data/rows.json")
 
     def test_worker_using_the_platform(self):
-        self.assert_broken({"workers/solver.ts": 'import { el } from "static-web-platform";'}, "may not use the platform")
+        self.assert_broken({"workers/solver.ts": 'import { el } from "static-web-platform";'},
+                           "(workers) may not use 'static-web-platform'")
+
+    def test_api_is_pure(self):
+        for spec, message in (('import { el } from "static-web-platform";', "(api) may not use"),
+                              ('import { frame } from "../ui/frame.ts";', "(api) may not import"),
+                              ('import rows from "../data/rows.json";', "(api) may not import")):
+            self.assert_broken({"api/x.ts": spec}, message)
+
+    def test_cli_uses_only_api_core_and_the_cli_entry(self):
+        for spec, message in (('import { el } from "static-web-platform";', "(cli) may not use 'static-web-platform'"),
+                              ('import { search } from "../features/search.ts";', "(cli) may not import"),
+                              ('import { frame } from "../ui/frame.ts";', "(cli) may not import")):
+            self.assert_broken({"cli/main.ts": spec}, message)
+
+    def test_cli_entry_only_in_cli(self):
+        self.assert_broken({"features/search.ts": 'import { startCli } from "static-web-platform/cli";'},
+                           "(features) may not use 'static-web-platform/cli'")
+
+    def test_nothing_imports_the_cli(self):
+        self.assert_broken({"main.ts": 'import { x } from "./cli/main.ts";'}, "(app) may not import cli/main.ts")
 
 
 if __name__ == "__main__":

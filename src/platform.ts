@@ -13,7 +13,7 @@
 */
 import { createI18n, type I18n, type StringTable } from "./core/i18n.ts";
 import { PLATFORM_STRINGS } from "./core/strings.ts";
-import type { NetOrigin, SiteConfig } from "./core/types.ts";
+import { isLocalCopy, type NetOrigin, type SiteConfig } from "./core/types.ts";
 import { createAssets, type Assets } from "./services/assets.ts";
 import { createConsent, type Consent } from "./services/consent.ts";
 import { applyStoredTheme, keepFocusVisibleUnderStickyHeaders } from "./services/display.ts";
@@ -87,9 +87,9 @@ export function startPlatform<O = Record<string, unknown>>(options: StartOptions
   const store = createStore(site.id, () => localStorage);
   const sessionStore = createStore(site.id, () => sessionStorage);
 
-  // The single file may contact its own site (update check): declared here,
-  // and allowed in that file's CSP connect-src by the build.
-  const declared = (): Record<string, NetOrigin> => site.mode === "single" && site.siteUrl
+  // A local copy may contact its own site (update check): declared here, and
+  // allowed in that copy's CSP connect-src by the build.
+  const declared = (): Record<string, NetOrigin> => isLocalCopy(site.mode) && site.siteUrl
     ? { ...site.netOrigins, [new URL(site.siteUrl).origin]: { directive: "connect-src", purpose: i18n.t("purposeUpdate") } }
     : { ...site.netOrigins };
 
@@ -102,15 +102,17 @@ export function startPlatform<O = Record<string, unknown>>(options: StartOptions
   const net = createNetwork(consent);
   const actions = mountActions({ slot: byId(options.actionsSlot ?? "app-actions"), site, i18n, dialogs,
     install: createInstall(), net, consent });
-  if (site.mode === "site") registerServiceWorker();      // never in "dev" (the dev server has no sw.js)
+  // Hosted site only: never in "dev" (no sw.js) nor "local" (a copy stays the
+  // version it is, and a port change would leave a stale worker behind).
+  if (site.mode === "site") registerServiceWorker();
   keepFocusVisibleUnderStickyHeaders();
   // Read-only hook for the verification gate (swp gate), which checks status
   // messages in the app's language. Exposes UI text only, nothing else.
   (window as Window & { __swpT?: I18n["t"] }).__swpT = i18n.t;
 
-  // Share links point at the hosted site when known (the single file's own
-  // file:// address is useless to someone else).
-  const shareBase = site.mode === "single" && site.siteUrl ? site.siteUrl : location.href;
+  // Share links point at the hosted site when known (a local copy's file:// or
+  // 127.0.0.1 address is useless to someone else).
+  const shareBase = isLocalCopy(site.mode) && site.siteUrl ? site.siteUrl : location.href;
   const share = {
     incoming,
     offer: (payload: unknown, items: ShareItem[]) => dialogs.confirmShare(shareLink(shareBase, payload), items),

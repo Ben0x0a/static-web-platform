@@ -5,6 +5,8 @@ Used by : assemble.py (the <meta> of each page).
 Uses    : the site dict (netOrigins, siteUrl).
 
 site   : no inline code at all ('self' only) — the strongest policy.
+local  : the local-server copy (served by its launcher on 127.0.0.1): the
+         site's policy, plus the site's origin for the update check.
 single : inline CSS/JS is unavoidable in one file; the only server it may
          reach is the site's origin, for the update check (version.json).
 Declared external origins (netOrigins) are added under their directive, so the
@@ -24,7 +26,8 @@ def build_csp(site: dict, mode: str) -> str:
         "script-src": ["'unsafe-inline'"] if single else ["'self'"],
         "style-src": ["'unsafe-inline'"] if single else ["'self'"],
         "img-src": ["data:", "blob:"] if single else ["'self'", "data:", "blob:"],
-        "connect-src": ([site_origin(site)] if site["siteUrl"] else ["'none'"]) if single else ["'self'"],
+        "connect-src": (([site_origin(site)] if site["siteUrl"] else ["'none'"]) if single
+                        else ["'self'", site_origin(site)] if mode == "local" and site["siteUrl"] else ["'self'"]),
         "manifest-src": ["'none'"] if single else ["'self'"],
         # Single file: declared workers start from inline code via blob: URLs.
         "worker-src": (["blob:"] if site.get("workers") else ["'none'"]) if single else ["'self'"],

@@ -1,5 +1,5 @@
 /*
-  services/update.ts — update check of the single-file download (no UI).
+  services/update.ts — update check of a local copy (single file or local server; no UI).
 
   Defines : checkForUpdate() → an UpdateResult the UI turns into a message.
   Used by : ui/actions.ts ("Check for updates" button, auto-check).

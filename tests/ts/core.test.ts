@@ -40,7 +40,7 @@ test("registry rejects double registration and unknown types", () => {
 });
 
 test("version helpers", () => {
-  const info = { version: "abc", date: "2026-10-03", download: "x.html", sha256: "" };
+  const info = { version: "abc", date: "2026-10-03", download: "x.html", sha256: "", cli: null };
   assert.equal(isUpdateAvailable("abc", info), false);
   assert.equal(isUpdateAvailable("abd", info), true);
   assert.equal(displayDate("2026-10-03"), "03.10.2026");

@@ -20,6 +20,8 @@ src/
   state/, ui/    optional: shared state / shared display helpers
   features/      one capability each (code + CSS; a subfolder when it grows)
   workers/       optional: Web Workers (core only)
+  api/           optional: the app's operations (pure), used by features/ and cli/
+  cli/           optional: command-line shell over api/ (Deno)
   content.ts     content (EDIT HERE), type-checked against core/types.ts
   main.ts        wiring: starts the platform, registers the features
   app.css        theme and layout
@@ -93,9 +95,27 @@ can check for updates.
 
 - **Install** (on the site): the app opens offline and updates itself. On iPhone: Share
   → Add to Home Screen. On Mac Safari: File → Add to Dock.
-- **Download**: a single HTML file for machines that are offline or locked down. In
-  that file, *Check for updates* (after your consent) compares it with the site.
-  `public/version.json` lists the current version and the SHA-256 of that file.
+- **Download**: a local copy for machines that are offline or locked down — a single
+  HTML file (or, for apps that need a real origin, a zip with a local server started
+  with Deno; see its `README.txt`). In it, *Check for updates* (after your consent)
+  compares it with the site. `public/version.json` lists the current version and the
+  SHA-256 of each published copy.
+
+## Command line
+
+<Only if `src/site.json` declares `cli`; otherwise delete this section.> The same
+operations as the page, for scripts and batch work, in `public/<id>-cli.js`
+(*Command line* link on the site). It needs [Deno](https://deno.com) 2.9 and reads
+only the files it is given; it never uses the network:
+
+```bash
+deno run --no-config --no-prompt --allow-read <id>-cli.js --help
+deno run --no-config --no-prompt --allow-read <id>-cli.js <command> FILE      # JSON on standard output
+```
+Add `--allow-write=out.json` with `--out out.json`. Other programs can import the same
+file as a library: `import { <operation> } from "./<id>-cli.js"`.
+
+<List the commands in workflow order, and any page feature without a command (with the reason).>
 
 ## Support link
 

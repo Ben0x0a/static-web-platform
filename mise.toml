@@ -1,3 +1,5 @@
-# mise.toml — exact Node.js version (npm comes with it): type-check and test the platform.
+# mise.toml — exact tool versions: Node.js (npm comes with it) type-checks and tests the
+# platform; Deno (2.9 LTS) runs the CLI bundles and the local-server launcher in tests.
 [tools]
 node = "24.21.0"
+deno = "2.9.8"

@@ -2,14 +2,17 @@
   ui/actions.ts — the platform's action bar and status line.
 
   Defines : mountActions() → { setStatus }.
-            Site mode   : Install, Download, Privacy, status.
-            Single file : Check for updates (when siteUrl is set), Privacy,
-                          status "Offline copy — version X (date)".
+            Site mode   : Install, Download (single file or local-server
+                          zip, per site.json "distribution"), Command line
+                          (when the app has a CLI), Privacy, status.
+            Local copy  : (single file, local-server page) Check for updates
+                          (when siteUrl is set), Privacy, status
+                          "Offline copy — version X (date)".
   Used by : platform.ts.
   Uses    : ui/dom.ts, ui/dialogs.ts, core/*, services/install.ts,
             services/update.ts, services/network.ts, services/consent.ts.
 
-  The ids (#download, #install, #check-update, #privacy, #accessibility, #status) are part of
+  The ids (#download, #download-cli, #install, #check-update, #privacy, #accessibility, #status) are part of
   the platform contract: the verification gate drives them.
 */
 import type { I18n } from "../core/i18n.ts";
@@ -55,9 +58,17 @@ export function mountActions({ slot, site, i18n, dialogs, install, net, consent 
       title: t("installTitle"), hidden: install.isInstalled(),
       onclick: async () => { if (!install.canPrompt()) dialogs.openInstallHelp(); else await install.prompt(); } });
     install.onInstalled(() => { installButton.hidden = true; });
-    const download = el("a", { id: "download", className: "button", href: site.downloadName,
-      download: site.downloadName, textContent: `⬇ ${t("download")}`, title: t("downloadTitle") });
-    slot.append(installButton, download, privacy, accessibility, status);
+    slot.append(installButton);
+    if (site.download) {
+      slot.append(el("a", { id: "download", className: "button", href: site.download, download: site.download,
+        textContent: `⬇ ${t("download")}`,
+        title: t(site.distribution === "local-server" ? "downloadLocalTitle" : "downloadTitle") }));
+    }
+    if (site.cli) {
+      slot.append(el("a", { id: "download-cli", className: "button", href: site.cli, download: site.cli,
+        textContent: `⬇ ${t("downloadCli")}`, title: t("downloadCliTitle") }));
+    }
+    slot.append(privacy, accessibility, status);
     return { setStatus };
   }
 
@@ -75,7 +86,7 @@ export function mountActions({ slot, site, i18n, dialogs, install, net, consent 
         const wrap = el("span", {}, `${t("updateAvailable")} (${displayDate(result.info.date)}) — `,
           // download: honoured only for same-origin links (not from file://);
           // the server's Content-Disposition: attachment does the real work.
-          el("a", { href: result.downloadUrl, download: site.downloadName, textContent: t("updateDownload") }));
+          el("a", { href: result.downloadUrl, download: site.download ?? "", textContent: t("updateDownload") }));
         setStatus(wrap, true);
       } else if (result.kind === "failed") {
         console.warn(`Update check failed: ${result.reason}`);

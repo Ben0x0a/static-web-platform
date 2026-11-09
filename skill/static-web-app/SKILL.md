@@ -1,6 +1,6 @@
 ---
 name: static-web-app
-description: Build, convert, review or deploy a static web app (start page, browser-based viewer or utility, small tool) on static-web-platform, the shared base included as a Git submodule. Shipped as an installable, mobile-ready PWA plus a single-file HTML download. Enforces local-only operation with consent before any external request, no data in the URL, a generated CSP, WCAG 2.2 AA, mobile rules, enforced layer boundaries, reproducible builds and an automated verification gate (`swp gate`). Use when creating, structuring, reviewing or deploying such an app, or adding network access, datasets, workers, sharing, offline/install, mobile or accessibility work to one.
+description: Build, convert, review or deploy a static web app (start page, browser-based viewer or utility, small tool) on static-web-platform, the shared base included as a Git submodule. Shipped as an installable, mobile-ready PWA plus a local copy (single HTML file, or a zip with a local server), and — for apps that compute something — a command-line version sharing the page's code (Deno, no network). Enforces local-only operation with consent before any external request, no data in the URL, a generated CSP, WCAG 2.2 AA, mobile rules, enforced layer boundaries, reproducible builds and an automated verification gate (`swp gate`). Use when creating, structuring, reviewing or deploying such an app, or adding network access, datasets, workers, sharing, offline/install, a command line, mobile or accessibility work to one.
 ---
 
 # Skill: Static Web App
@@ -27,20 +27,35 @@ server-side or multi-user deployments.
 ## Layers (enforced by `swp build`)
 ```
 src/
-  site.json   settings          core/      PURE domain logic + types, unit-tested
-  index.html  page shell        data/      bundled datasets + SOURCES.md (read via core/)
-  main.ts     wiring only       features/  one capability each, with its own CSS
-  content.ts  typed content     ui/ state/ optional shared display helpers / shared state
-                                workers/   optional Web Workers (core/ only)
+  site.json    settings
+  index.html   page shell
+  core/        PURE domain logic + types, unit-tested
+  data/        bundled datasets + SOURCES.md (read via core/)
+  api/         the app's operations (its programmatic API), pure
+  features/    page shell: one capability each, with its own CSS
+  ui/ state/   optional shared display helpers / shared state
+  workers/     optional Web Workers (core/, api/)
+  cli/         command-line shell over api/ (Deno)
+  content.ts   typed content
+  main.ts      wiring only
 ```
 - `core/` imports nothing but `core/`, `data/` and pure packages: no DOM, no
   `fetch`, no storage, no platform. Logic that can be pure goes here, with a test.
+- `api/` holds the app's **operations**: one typed function per thing the app
+  computes (input bytes or text + options → a plain result, or `{ ok: false, code,
+  message }`). It imports only `core/` and `api/`, with the same purity as `core/`.
+- Two thin shells call the operations and hold no logic: the page (`features/`) and
+  the command line (`cli/`). **Develop them in parallel**: an operation added to one
+  shell is added to the other in the same change; one without a CLI equivalent (an
+  interactive map, for example) is listed in the README with the reason.
 - A feature never imports another feature; features are combined in `main.ts` or
   through `createRegistry()`. Shared state goes in `state/`.
-- The platform is imported only as `"static-web-platform"`, never by deep path.
+- The platform is imported only through its public entries: `"static-web-platform"`
+  (page layers) and `"static-web-platform/cli"` (`cli/` only), never by deep path.
 - TypeScript: `strict`, imports with `.ts` extensions, `import type` for types, no
   `enum` / `namespace` / constructor parameter properties, JSON imported
-  `with { type: "json" }`. Node pinned exactly in `mise.toml`.
+  `with { type: "json" }`. Node pinned exactly in `mise.toml`, and Deno (2.9 LTS) for
+  apps with a command line or a local-server copy.
 - Any framework may render the app's elements (plain TS, Preact, Svelte verified) if
   its build honours the build contract in the README; no `eval` at run time.
 
@@ -59,8 +74,16 @@ src/
    `platform.share.offer()`, which warns and copies the link; incoming share data is
    validated in `core/`.
 3. **One source, reproducible outputs.** Edit `src/` only; `swp build` writes
-   `public/` (hosted site + single file), which is committed. `swp verify` proves a
-   byte-for-byte rebuild.
+   `public/` (hosted site, local copy, command line), which is committed. `swp verify`
+   proves a byte-for-byte rebuild.
+   - **Local copy wherever it works** (`site.json` `"distribution"`): `"single"` by
+     default; `"local-server"` only for a concrete failure from `file://` (a service
+     refusing `Origin: null` or requiring a referrer, a library needing same-origin
+     files), recorded in the README; `"site-only"` only when the app handles no
+     personal data and gains nothing from a local copy.
+   - **Command line for apps that compute something** (`site.json` `"cli"`): commands
+     declared with `startCli()` in workflow order, one per operation. It reads local
+     files only: no network module, no network permission.
 4. **Datasets** live in `src/data/`, each described in `SOURCES.md` (source, date,
    licence, SHA-256, update procedure), read through a typed `core/` loader with a
    test pinning count and hash; check the licence before bundling; 5 MB budget,
@@ -92,6 +115,12 @@ src/
 4. Add a scenario for every screen reached by interaction (`references/scenarios.md`).
 5. Run the gate below, then the manual accessibility pass; fill in the README.
 
+**Adding the command line:** move the computation into `src/api/` (features then
+call it), write `src/cli/main.ts` (`startCli`, one command per operation, and
+`export * from "../api/index.ts"` so the bundle is also the library), declare
+`"cli": {"entry": "src/cli/main.ts"}`, pin `deno` in `mise.toml`, and document the
+commands in the README (`deno run --no-config --no-prompt --allow-read <id>-cli.js …`).
+
 **Updating the platform in an app:** read `platform/CHANGELOG.md`, check out the new
 tag in `platform/`, rebuild, run the gate, commit the pointer with `public/`.
 
@@ -103,8 +132,9 @@ mise exec -- npx swp verify
 mise exec -- npx swp gate
 ```
 The gate checks accessibility, keyboard, mobile rules, URL and title, requests
-without consent, CSP, single file, offline and update, on the first screen and on
-every scenario, on desktop and phone. Report explicitly what was **not** tested
+without consent, CSP, the local copy (single file, or the local-server zip run under
+Deno), the command line (under Deno, without permissions), offline and update, on the
+first screen and on every scenario, on desktop and phone. Report explicitly what was **not** tested
 (other browsers, real phones, real screen reader, voice control).
 
 ## CI

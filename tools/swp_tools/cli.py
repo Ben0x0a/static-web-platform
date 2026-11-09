@@ -12,7 +12,7 @@ Commands (in workflow order):
   swp gate                  full verification gate (Chrome, axe-core, mobile)
   swp serve  [DIR] [PORT]   serve public/ with its _headers
   swp icons  [SVG]          render the PNG icons from src/icons/icon.svg
-  swp cors   URL…           does each endpoint answer CORS for the site AND the single file?
+  swp cors   URL…           does each endpoint answer CORS for the site AND the app's local copy?
   swp links  [--write] [--report FILE] [--fail-on-broken]
                             check the app's outgoing links (site.json "linkCheck"), from here
 Run from the app's root folder, with Node.js on PATH (e.g. `mise exec -- npx swp build`).
@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     serve_cmd = commands.add_parser("serve", help="serve public/ with its _headers")
     serve_cmd.add_argument("directory", nargs="?", type=pathlib.Path, default=pathlib.Path("public"))
     serve_cmd.add_argument("port", nargs="?", type=int, default=8765)
-    cors_cmd = commands.add_parser("cors", help="check endpoints answer CORS for the site and the single file")
+    cors_cmd = commands.add_parser("cors", help="check endpoints answer CORS for the site and the local copy")
     cors_cmd.add_argument("urls", nargs="+")
     links_cmd = commands.add_parser("links", help="check the app's outgoing links (site.json linkCheck)")
     links_cmd.add_argument("--write", action="store_true", help="update the status file when a status changed")
@@ -103,14 +103,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "cors":
         from swp_tools.config import load_project
-        from swp_tools.cors import check_cors
+        from swp_tools.cors import check_cors, copy_origins
         from swp_tools.csp import site_origin
-        site = load_project(root).site if (root / "src" / "site.json").is_file() else {"siteUrl": ""}
-        results = check_cors(args.urls, site_origin(site) or None)
+        project = load_project(root) if (root / "src" / "site.json").is_file() else None
+        site = project.site if project else {"siteUrl": ""}
+        copies = copy_origins(project)
+        results = check_cors(args.urls, ([site_origin(site)] if site_origin(site) else []) + copies)
         for r in results:
             print(f"{'OK  ' if r.allowed else 'FAIL'}  {r.url}  (Origin: {r.origin})  {r.detail}")
         if not site_origin(site):
-            print("Note: site.json siteUrl is empty — only the single file (Origin: null) was checked.")
+            print("Note: site.json siteUrl is empty — only the local copy's origin was checked.")
+        if project and project.distribution == "local-server":
+            print("Note: a local copy on another port (busy default, or --port) sends that port in its Origin.")
         return 0 if all(r.allowed for r in results) else 1
     if args.command == "links":
         from swp_tools.config import load_project

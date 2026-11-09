@@ -8,8 +8,11 @@ everything that must behave the same everywhere:
   (accessible dialog; "ask every time" with the exact value for user input;
   decisions revocable in *Privacy*), with a generated Content-Security-Policy as the
   hard ceiling.
-- **Two outputs from one source:** an installable app (PWA, offline, updates itself)
-  and a single-file HTML download that can check for updates (after consent).
+- **One source, several outputs:** an installable app (PWA, offline, updates itself);
+  a local copy chosen per app — a single-file HTML download, or a zip with a local
+  server for apps that need a real origin, or none — that can check for updates
+  (after consent); and, for apps that compute something, a command-line version that
+  is also the app's library, sharing the page's code (runs with Deno, no network).
 - **Accessibility built in:** dialogs, a single-key shortcut switch (WCAG 2.1.4), a
   theme choice, focus kept visible under sticky headers, and phone rules (16px fields,
   44px targets).
@@ -17,8 +20,8 @@ everything that must behave the same everywhere:
   *Share* action.
 - **The `swp` command:** build (architecture check, type check, bundle, assembly),
   `check`, `verify` (byte-for-byte reproducibility), `gate` (security, consent,
-  accessibility, keyboard, mobile, URL, single file, offline — on the first screen
-  and on every app scenario), `serve`, `icons`.
+  accessibility, keyboard, mobile, URL, local copy, command line, offline — on the
+  first screen and on every app scenario), `serve`, `icons`.
 
 ## Architecture
 
@@ -29,21 +32,30 @@ flowchart LR
     services["services/ — consent, network, storage, share, shortcuts,<br/>display, assets, workers, update, install, offline"]
     ui["ui/ — dialogs, action bar, base.css"]
     entry["platform.ts — startPlatform()"]
+    pcli["cli/ — startCli() (Deno)"]
+    launcher["launcher/ — local server (Deno)"]
     core --> services --> ui --> entry
   end
   subgraph app["an app"]
     acore["core/ (+ data/) — pure domain"]
+    api["api/ — operations (programmatic API)"]
     shared["ui/ · state/ — shared helpers"]
     features["features/ — one capability each"]
     main["main.ts — wiring"]
-    acore --> shared --> features --> main
+    cli["cli/ — command line"]
+    acore --> api --> features --> main
+    shared --> features
+    api --> cli
   end
   entry --> main
+  pcli --> cli
 ```
 
 Dependencies point inward only. The platform never imports app code. Apps use only
-the public API (`src/index.ts`), and their own layer rules are enforced by
-`swp build` (`tools/swp_tools/arch.py`).
+the public entries (`src/index.ts` for the page, `src/cli/index.ts` for the command
+line), and their own layer rules are enforced by `swp build`
+(`tools/swp_tools/arch.py`): `api/` imports only `core/` and `api/`; `cli/` imports only
+`api/`, `core/`, `cli/` and `"static-web-platform/cli"`; nothing imports `cli/`.
 
 | Platform layer | May use | Must not |
 |---|---|---|
@@ -51,6 +63,8 @@ the public API (`src/index.ts`), and their own layer rules are enforced by
 | `services/` | `core/`, browser APIs | render UI (questions go through injected functions) |
 | `ui/` | `core/`, `services/`, the DOM | contain decision logic |
 | `platform.ts` | everything above | — |
+| `cli/` | its own files; Deno file and stream APIs (`deno-io.d.ts`) | the DOM, the network, the page layers |
+| `launcher/` | `cli/deno-io.d.ts` + `Deno.serve` (`deno-serve.d.ts`) | anything but serving `public/` on 127.0.0.1 |
 
 ## Using it in an app
 
@@ -59,7 +73,7 @@ release, and installs it through npm from that folder:
 
 ```bash
 git submodule add https://github.com/<owner>/static-web-platform.git platform
-git -C platform checkout v1.5.1
+git -C platform checkout v2.0.0
 ```
 ```jsonc
 // package.json of the app
@@ -74,7 +88,8 @@ app has its own bundler). In CI, `actions/checkout` needs `submodules: true`.
 
 ```ts
 const platform = startPlatform<MyOptions>({ strings: { fr: { … } } });   // first, once
-platform.site                       // SiteConfig: id, title, lang, mode ("site" | "single"), version, options…
+platform.site                       // SiteConfig: id, title, lang, mode ("site" | "single" | "local" | "dev"),
+                                    //   distribution, download, cli, version, options…
 platform.t("key", { n: 3 })         // UI strings (platform + app), missing key = error
 platform.store / sessionStore       // prefixed storage, never throws
 platform.net.fetch(url, init, { disclose })    // consent-gated; null when refused; redirects never followed
@@ -84,17 +99,43 @@ platform.consent.request(origin)    // before enabling a library that loads its 
 platform.share.offer(payload, items)           // warned share link (copied, never in the address bar)
 platform.share.incoming             // data of an opened share link (already removed from the URL)
 platform.shortcuts.add({ key: "/", description, run })   // single-key shortcuts (user can turn off)
-platform.assets.fetch("data/big.json")         // optional hosted-site files; null in the single file
-platform.worker("solver")           // Web Worker, same call in both outputs
+platform.assets.fetch("data/big.json")         // optional served files (site, local server); null in the single file
+platform.worker("solver")           // Web Worker, same call in every output
 platform.setStatus(text, notice?)   // announced status line
 platform.supportLink()              // "☕ Buy me a coffee" link (site.json "support"), or null; the app places it
 createRegistry<Spec, Out, Ctx>()    // one renderer per content type
 el(tag, props, …children), byId(id)            // small DOM helpers
+isLocalCopy(mode), servesFiles(mode)           // what a page mode can do
 ```
+
+### Command-line entry (`import … from "static-web-platform/cli"`)
+
+The only platform import an app's `src/cli/` may use. The app lists its commands, in
+workflow order; each one calls one operation of `src/api/`:
+
+```ts
+import { startCli } from "static-web-platform/cli";
+import { analyse } from "../api/index.ts";
+export * from "../api/index.ts";        // the same file is the app's library
+
+startCli({ name: "tool", summary: "What the tool does", commands: [{
+  name: "analyse", summary: "Analyse a file", input: "file",          // "file" (path or -) | "none"
+  options: [{ name: "depth", description: "…", type: "number", default: 1 }],
+  run: (bytes, options) => analyse(bytes ?? new Uint8Array(), options), // → { ok, value } | { ok: false, code, message }
+  text: value => "…\n",                                                 // optional --format text
+}] });
+```
+The frame gives every CLI the same grammar: `--help` (per command too), `--version`,
+`FILE` or `-` (standard input), `--format json|text` (JSON by default), `--out FILE`
+(`--force` to replace), and exit codes `0` success, `1` invalid input, `2` usage error,
+`3` internal error. `runCli(spec, args, build, io)` is the same logic with injected
+I/O, for unit tests.
 
 ### Page contract (`src/index.html`)
 `<!-- BUILD:HEAD -->`, `<!-- BUILD:BODY -->`, an element `#app-actions` (the platform
-adds Install / Download / Check for updates / Privacy / Accessibility / status),
+adds Install / Download / Command line / Check for updates / Privacy / Accessibility /
+status; ids `#install`, `#download`, `#download-cli`, `#check-update`, `#privacy`,
+`#accessibility`, `#status`),
 `<html lang>`, a skip link, and `data-swp-sticky` on any sticky header (the platform
 keeps focused elements visible below it).
 
@@ -102,8 +143,10 @@ keeps focused elements visible below it).
 | Key | Meaning |
 |---|---|
 | `id`, `title`, `shortName`, `lang`, `themeColor` | identity (storage prefix, manifest, `<title>`) |
-| `siteUrl` | production URL ("" until known: no update check in the single file) |
-| `downloadName` | file name of the single-file download |
+| `siteUrl` | production URL ("" until known: local copies offer no update check) |
+| `distribution` | the local copy: `"single"` (default, the single HTML file), `"local-server"` (`<id>-local.zip`: the page + a Deno launcher on 127.0.0.1, for apps that need a real origin; each app has its own default port in 29170–29998, a block the IANA registry leaves unassigned), `"site-only"` (none) |
+| `downloadName` | file name of the single-file download (required with `"single"`) |
+| `cli` | `{ "entry": "src/cli/main.ts" }`: command-line version, published as `<id>-cli.js` |
 | `entry` | bundler entry (default `src/main.ts`) |
 | `linkCheck` | `{ "sources": ["src/content.ts"], "output": "data/link-status.json" }`: links checked by `swp links` (status file read by a `core/` loader) |
 | `netOriginsFrom` | `[{ "data": "data/rdap-dns.json", "directive": "connect-src", "purpose": "…", "scope": "request" }]`: every https origin listed in that dataset, declared exactly (one group in *Privacy*) |
@@ -112,7 +155,7 @@ keeps focused elements visible below it).
 | `modes` | `["identifiers", "files"]`: `core/` sub-folders isolated from each other (other sub-folders import freely) |
 | `themeSwitch` | offer a light / dark / system choice in *Accessibility* |
 | `support` | `{ "url": "https://buymeacoffee.com/…" }`: "support the author" link, placed by the app with `platform.supportLink()` |
-| `assets`, `precacheAssets` | optional files, hosted site only (globs relative to `src/`); cached offline only if `true` |
+| `assets`, `precacheAssets` | optional files served next to the page, never in the single file (globs relative to `src/`); cached offline only if `true` |
 | `workers` | `{ "name": "src/workers/name.ts" }` |
 | `appBuild` | `{ "command": [...], "outDir": "build/app", "inputs": ["vite.config.ts"] }`: own bundler |
 | `typecheck` | `{ "command": [...] }`: replaces `tsc` (e.g. `svelte-check`) |
@@ -123,6 +166,9 @@ keeps focused elements visible below it).
   IIFE;
 - `app.css`: optional;
 - `workers/<name>.js`: one self-contained script per declared worker.
+
+The command line (`cli.entry`) and the local-server launcher are always bundled by
+esbuild as ES modules for Deno, whatever builds `app.js`.
 
 By default esbuild produces them from `entry` and `workers`. TypeScript, JSX (React,
 Preact) and CSS imports work out of the box; images and fonts referenced from CSS
@@ -169,13 +215,19 @@ from the dev page, before the app.
 TypeScript directly (`node --test`): no `enum`, no `namespace`, no constructor
 parameter properties, and type-only imports written `import type`.
 
-`src/core/` is type-checked a second time **without the DOM library**; besides
-ECMAScript it may use only `TextEncoder`, `TextDecoder`, `structuredClone` and
-`crypto` (`getRandomValues`, `randomUUID`, `subtle.digest`) — the APIs pages,
-workers and Node share (`tools/swp_tools/core-runtime.d.ts`).
+`src/core/` and `src/api/` are type-checked a second time **without the DOM
+library**; besides ECMAScript they may use only `TextEncoder`, `TextDecoder`,
+`structuredClone` and `crypto` (`getRandomValues`, `randomUUID`, `subtle.digest`) —
+the APIs pages, workers, Node and Deno share (`tools/swp_tools/core-runtime.d.ts`).
+`src/cli/` is checked the same way, plus only the Deno file and stream APIs
+(`src/cli/deno-io.d.ts`): no `fetch`, no sockets, so network code fails the build.
+Deno is the second barrier: the CLI runs without `--allow-net`.
 
-**Node:** `mise.toml` pins an exact version (`node = "24.21.0"`); `swp build` refuses
-another one, because npm versions differ in how they link package binaries.
+**Node and Deno:** `mise.toml` pins exact versions (`node = "24.21.0"`, and
+`deno = "2.9.8"` for apps with a command line or the local-server copy, which the gate
+runs). `swp build` refuses another Node, because npm versions differ in how they link
+package binaries. Users of the command line need Deno 2.9 (LTS) only:
+`deno run --no-config --no-prompt --allow-read <id>-cli.js <command> FILE`.
 
 ## Commands
 
@@ -183,7 +235,7 @@ From the app's root, with Node on PATH (`mise exec -- …`):
 
 | Command | Does |
 |---|---|
-| `npx swp build` | architecture check, type check (+ `core/` without the DOM), bundle, assemble `public/` |
+| `npx swp build` | architecture check, type check (+ `core/`, `api/`, `cli/` purity), bundle, assemble `public/` |
 | `npx swp build --dev` | only `config.js` + `base.css` for a dev server |
 | `npx swp check` | `public/` is up to date with `src/` (no Node needed) |
 | `npx swp verify` | `public/` is byte-for-byte a fresh rebuild |
@@ -191,7 +243,7 @@ From the app's root, with Node on PATH (`mise exec -- …`):
 | `npx swp serve` | serve `public/` with its `_headers`, imitating Cloudflare's "pretty URLs" (`/x.html` → `/x`) |
 | `npx swp icons` | render the PNG icons from `src/icons/icon.svg` |
 | `npx swp links [--write] [--report FILE]` | check the app's outgoing links (site.json `linkCheck`); used by a weekly CI job |
-| `npx swp cors URL…` | before declaring an endpoint: does it answer CORS for the site and the single file (`Origin: null`)? |
+| `npx swp cors URL…` | before declaring an endpoint: does it answer CORS for the site and the app's local copy (`Origin: null`, or `http://127.0.0.1:<port>`)? |
 
 ## Developing the platform
 

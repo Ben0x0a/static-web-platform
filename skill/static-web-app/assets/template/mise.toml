@@ -1,3 +1,6 @@
-# mise.toml — EXACT Node.js version (npm comes with it; swp build checks it): `mise exec -- npx swp build`.
+# mise.toml — EXACT tool versions: Node.js (npm comes with it; swp build checks it),
+# and Deno (2.9 LTS), which `swp gate` uses to run the command line and the
+# local-server copy. Run everything through mise: `mise exec -- npx swp build`.
 [tools]
 node = "24.21.0"
+deno = "2.9.8"

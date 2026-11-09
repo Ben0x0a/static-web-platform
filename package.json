@@ -1,12 +1,13 @@
 {
   "name": "static-web-platform",
-  "version": "1.5.1",
+  "version": "2.0.0",
   "private": true,
   "description": "Shared base of static web apps: consent-gated network, local storage, single-file download + update check, PWA install/offline, build (swp) and verification gate.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./cli": "./src/cli/index.ts"
   },
   "bin": {
     "swp": "bin/swp"
