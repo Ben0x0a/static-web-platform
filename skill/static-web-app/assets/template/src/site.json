@@ -1,0 +1,15 @@
+{
+  "id": "static-app",
+  "title": "Static App",
+  "shortName": "App",
+  "lang": "en",
+  "themeColor": "#16191d",
+  "siteUrl": "",
+  "downloadName": "static-app.html",
+  "entry": "src/main.ts",
+  "netOrigins": {},
+  "options": {
+    "collapseOnMobile": true
+  },
+  "themeSwitch": true
+}

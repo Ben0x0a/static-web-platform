@@ -1,0 +1,86 @@
+# links.yml — weekly check of the app's outgoing links (static-web-app skill).
+#
+# Defines : one job, from GitHub's servers (never from visitors): `swp links`
+#           checks every link of src/content.ts (site.json "linkCheck"); when a
+#           status CHANGED it rebuilds public/ and opens/updates the pull request
+#           bot/link-status → dev; when links are BROKEN it opens/updates an issue
+#           labelled broken-links. Nothing reaches dev or main without review.
+# Uses    : mise.toml (Node), package-lock.json, static-web-platform (swp links,
+#           swp build), the GitHub CLI preinstalled on the runner.
+#
+# Repository settings needed: Settings → Actions → General → Workflow permissions
+# → "Allow GitHub Actions to create and approve pull requests".
+# Pull requests opened with the job's token do not start other workflows: run CI
+# on them by hand (Actions → CI → Run workflow) or close/reopen the PR.
+# Scheduled runs use the workflow file of the DEFAULT branch.
+
+name: Link check
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"          # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write                 # push the bot/link-status branch
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: link-check
+  cancel-in-progress: false
+
+jobs:
+  links:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev                # day-to-day branch (dev / main workflow)
+          submodules: true
+
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+
+      - name: Install from the lockfile
+        run: npm ci
+
+      - name: Check the links
+        run: npx swp links --write --report link-report.md
+
+      - name: Open or update the pull request when a status changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- src/data; then
+            echo "No status change."
+            exit 0
+          fi
+          npx swp build
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C bot/link-status
+          git add src/data public
+          git commit -m "chore: update link status"
+          git push --force origin bot/link-status
+          if [ "$(gh pr view bot/link-status --json state --jq .state 2>/dev/null)" = "OPEN" ]; then
+            gh pr edit bot/link-status --body-file link-report.md
+          else
+            gh pr create --base dev --head bot/link-status --title "Link status update" --body-file link-report.md
+          fi
+
+      - name: Open or update the broken-links issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! grep -q "^### Broken links" link-report.md; then
+            echo "No broken link."
+            exit 0
+          fi
+          gh label create broken-links --color d73a4a --description "Found by the weekly link check" 2>/dev/null || true
+          number="$(gh issue list --label broken-links --state open --json number --jq '.[0].number')"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file link-report.md
+          else
+            gh issue create --title "Broken links" --label broken-links --body-file link-report.md
+          fi

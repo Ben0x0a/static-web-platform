@@ -1,0 +1,7 @@
+/* search.css — styles of the "search" feature (bundled into app.css by esbuild). */
+#search-slot { flex: 1; min-width: 0; max-width: 420px; }
+#search { width: 100%; padding: 7px 10px; font: inherit; color: var(--text); background: var(--bg);
+          border: 1px solid var(--control-border); border-radius: 6px; }
+@media (max-width: 640px) {
+  #search { min-height: 44px; font-size: 16px; }   /* < 16px makes iOS Safari zoom on focus */
+}

@@ -1,0 +1,29 @@
+{
+  "name": "static-app",
+  "private": true,
+  "description": "Static web app built on static-web-platform. Development tools only in node_modules; public/ is what ships.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "swp build",
+    "check": "swp check",
+    "verify": "swp verify",
+    "gate": "swp gate",
+    "icons": "swp icons",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit",
+    "test": "node --test \"tests/*.test.ts\""
+  },
+  "dependencies": {
+    "static-web-platform": "file:platform"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  },
+  "allowScripts": {
+    "esbuild": false
+  }
+}

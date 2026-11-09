@@ -1,0 +1,25 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Machine-specific agent config
+.claude/
+
+# Maintainer notes (planning docs stay local)
+docs/internal/
+
+# Node tooling and intermediate bundle (public/ is the published build)
+node_modules/
+build/
+
+# Python bytecode
+__pycache__/
+
+# Source-page exports and downloaded copies (may contain personal data)
+*.webarchive
+*.download.html
+
+# Evidence / case data must never be committed
+evidence/
+cases/

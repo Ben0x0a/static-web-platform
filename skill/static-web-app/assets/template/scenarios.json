@@ -1,0 +1,61 @@
+{
+  "//": "Screens reached by interaction, re-checked by `swp gate` (accessibility, keyboard, phone rules, URL/title, requests). Steps: click | fill [selector, text] | press | expect | wait | consent (deny|once|session|always).",
+  "scenarios": [
+    {
+      "name": "search with results",
+      "steps": [
+        {
+          "click": "#search"
+        },
+        {
+          "fill": [
+            "#search",
+            "example"
+          ]
+        },
+        {
+          "expect": "#app .section"
+        }
+      ]
+    },
+    {
+      "name": "search without results",
+      "steps": [
+        {
+          "fill": [
+            "#search",
+            "zzzz-nothing"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "privacy dialog",
+      "devices": [
+        "phone"
+      ],
+      "steps": [
+        {
+          "click": "#privacy"
+        },
+        {
+          "expect": "#privacy-dialog"
+        }
+      ]
+    },
+    {
+      "name": "accessibility dialog",
+      "devices": [
+        "phone"
+      ],
+      "steps": [
+        {
+          "click": "#accessibility"
+        },
+        {
+          "expect": "#accessibility-dialog"
+        }
+      ]
+    }
+  ]
+}

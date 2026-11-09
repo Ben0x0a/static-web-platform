@@ -209,9 +209,7 @@ one app (and the Svelte example, if the build contract changed) through
 2. `git tag -a vX.Y.Z` (never move a tag afterwards).
 3. Create the GitHub repository `static-web-platform`; then
    `git remote add origin …`, then `git push -u origin main --tags`.
-4. Public repository: apps' CI fetches the submodule with `submodules: true`.
-   Private repository: apps fetch it with a read-only deploy key in a separate step
-   (the `static-web-app` skill, "Private platform: CI access").
+4. The repository is public: apps' CI fetches the submodule with `submodules: true`.
 
 ### Every release
 Update `CHANGELOG.md`, then bump `version` in `package.json` (semantic versioning:

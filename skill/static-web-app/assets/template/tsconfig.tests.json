@@ -1,0 +1,6 @@
+{
+  "//": "Type-checks the unit tests (Node test runner) — separate so app code cannot use Node globals.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

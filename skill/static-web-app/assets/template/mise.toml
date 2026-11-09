@@ -1,0 +1,3 @@
+# mise.toml — EXACT Node.js version (npm comes with it; swp build checks it): `mise exec -- npx swp build`.
+[tools]
+node = "24.21.0"

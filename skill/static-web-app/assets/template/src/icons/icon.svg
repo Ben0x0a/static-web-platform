@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- App icon source. Full-bleed square: phones round the corners themselves.
+       Used by manifest.webmanifest and sw.js; render PNGs with `npx swp icons`. -->
+  <rect width="512" height="512" fill="#16191d"/>
+  <rect x="128" y="128" width="256" height="256" rx="48" fill="#7cc4fa"/>
+</svg>

@@ -1,0 +1,20 @@
+# dependabot.yml — weekly update proposals for the pinned CI actions, the
+# platform submodule (follows the platform's main branch, which only receives
+# released states) and the npm dev tools (TypeScript, esbuild). Each arrives as
+# a pull request that runs CI; rebuild public/ in it (`npx swp build`) — the
+# version hash covers the platform and package-lock.json, so CI fails until then.
+# With a dev/main branch workflow, add `target-branch: dev` to each entry.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly
