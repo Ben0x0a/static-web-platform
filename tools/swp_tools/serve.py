@@ -22,6 +22,7 @@ import functools
 import http.server
 import logging
 import pathlib
+import sys
 
 _LOG = logging.getLogger("serve")
 
@@ -93,6 +94,18 @@ class _Server(http.server.ThreadingHTTPServer):
     # (and parallel test runs) opening many connections at once.
     request_queue_size = 128
     daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # WHY: browsers cancel requests they no longer need (a page navigates
+        # away, a service worker replaces a fetch); writing the rest of the
+        # file then raises BrokenPipeError or ConnectionResetError. That is
+        # the client leaving, not a server fault, and the default handler's
+        # traceback buried real failures in the gate's output. Anything else
+        # is still reported.
+        if isinstance(sys.exc_info()[1], ConnectionError):
+            _LOG.debug("client %s closed the connection early", client_address)
+            return
+        super().handle_error(request, client_address)
 
 
 def make_server(directory: pathlib.Path, port: int = 0) -> http.server.ThreadingHTTPServer:

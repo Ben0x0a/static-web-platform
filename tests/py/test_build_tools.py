@@ -262,6 +262,54 @@ class PrettyUrlServeTest(unittest.TestCase):
                 server.server_close()
 
 
+class ServerErrorTest(unittest.TestCase):
+    """A client leaving mid-transfer is not an error; real failures are still reported."""
+
+    def test_client_reset_is_silent(self):
+        import contextlib
+        import socket
+        import struct
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "big.bin").write_bytes(b"x" * 8_000_000)     # larger than the socket buffers
+            server = make_server(root)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            stderr = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(stderr):
+                    client = socket.create_connection(("127.0.0.1", server.server_port))
+                    client.sendall(b"GET /big.bin HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+                    client.recv(1024)
+                    # SO_LINGER 0: close() sends a reset, as a browser cancelling a request can.
+                    client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                    client.close()
+                    # A second request proves the server still answers, and waits for the first to end.
+                    with urllib.request.urlopen(f"http://127.0.0.1:{server.server_port}/big.bin", timeout=10) as r:
+                        r.read()
+                    for t in [t for t in threading.enumerate() if t is not threading.current_thread() and t is not thread]:
+                        t.join(timeout=5)
+            finally:
+                server.shutdown()
+                server.server_close()
+            self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_other_errors_are_reported(self):
+        import contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            server = make_server(pathlib.Path(tmp))
+            stderr = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(stderr):
+                    try:
+                        raise ValueError("real failure")
+                    except ValueError:
+                        server.handle_error(None, ("127.0.0.1", 1))
+            finally:
+                server.server_close()
+            self.assertIn("ValueError: real failure", stderr.getvalue())
+
+
 class PortTest(unittest.TestCase):
     def project(self, app_id: str) -> Project:
         return Project(root=pathlib.Path("."), site={**SITE, "id": app_id}, platform_dir=pathlib.Path("."))

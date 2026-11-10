@@ -4,6 +4,16 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## 2.0.1 — 2026-11-10
+
+Fixed
+- `swp serve` and the gate's test server no longer print a traceback when a browser
+  closes a connection before a file is fully sent (`BrokenPipeError`,
+  `ConnectionResetError`): that is the client leaving, not a server fault, and the
+  traceback buried real failures in the gate's output. Other errors are still reported.
+
+Apps: no change needed; the version hash changes, so rebuild `public/`.
+
 ## 2.0.0 — 2026-11-09
 
 Breaking
