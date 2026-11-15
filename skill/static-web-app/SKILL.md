@@ -1,6 +1,6 @@
 ---
 name: static-web-app
-description: Build, convert, review or deploy a static web app (start page, browser-based viewer or utility, small tool) on static-web-platform, the shared base included as a Git submodule. Shipped as an installable, mobile-ready PWA plus a local copy (single HTML file, or a zip with a local server), and — for apps that compute something — a command-line version sharing the page's code (Deno, no network). Enforces local-only operation with consent before any external request, no data in the URL, a generated CSP, WCAG 2.2 AA, mobile rules, enforced layer boundaries, reproducible builds and an automated verification gate (`swp gate`). Use when creating, structuring, reviewing or deploying such an app, or adding network access, datasets, workers, sharing, offline/install, a command line, mobile or accessibility work to one.
+description: Build, convert, review or deploy a static web app (start page, browser-based viewer or utility, small tool) on static-web-platform, the shared base included as a Git submodule. Shipped as an installable, mobile-ready PWA plus local copies (a single HTML file, and a zip with a local server where needed), and — for apps that compute something — a command-line version sharing the page's code (Deno, no network). Enforces local-only operation with consent before any external request, no data in the URL, a generated CSP, WCAG 2.2 AA, mobile rules, enforced layer boundaries, reproducible builds and an automated verification gate (`swp gate`). Use when creating, structuring, reviewing or deploying such an app, or adding network access, datasets, workers, sharing, offline/install, a command line, mobile or accessibility work to one.
 ---
 
 # Skill: Static Web App
@@ -77,13 +77,20 @@ src/
    `public/` (hosted site, local copy, command line), which is committed. `swp verify`
    proves a byte-for-byte rebuild.
    - **Local copy wherever it works** (`site.json` `"distribution"`): `"single"` by
-     default; `"local-server"` only for a concrete failure from `file://` (a service
-     refusing `Origin: null` or requiring a referrer, a library needing same-origin
-     files), recorded in the README; `"site-only"` only when the app handles no
-     personal data and gains nothing from a local copy.
+     default. `"local-server"` adds *Local server (Deno)*, a zip with a local server
+     for a concrete failure from `file://` (a service refusing `Origin: null` or
+     requiring a referrer, a library needing same-origin files), recorded in the
+     README; the single file stays the plain Download, so the app must degrade
+     cleanly there and say which features need the local server or the site.
+     `"site-only"` only when the app handles no personal data and gains nothing from
+     a local copy.
+   - **Two choices:** *Download page* = one HTML file, nothing to install
+     (beginners); *Local server (Deno)* = the zip, everything needing Deno (local
+     server, command line), installation steps in its `README.txt` (advanced).
    - **Command line for apps that compute something** (`site.json` `"cli"`): commands
-     declared with `startCli()` in workflow order, one per operation. It reads local
-     files only: no network module, no network permission.
+     declared with `startCli()` in workflow order, one per operation, shipped in the
+     zip (a CLI always brings it). It reads local files only: no network module, no
+     network permission.
 4. **Datasets** live in `src/data/`, each described in `SOURCES.md` (source, date,
    licence, SHA-256, update procedure), read through a typed `core/` loader with a
    test pinning count and hash; check the licence before bundling; 5 MB budget,
@@ -119,7 +126,8 @@ src/
 call it), write `src/cli/main.ts` (`startCli`, one command per operation, and
 `export * from "../api/index.ts"` so the bundle is also the library), declare
 `"cli": {"entry": "src/cli/main.ts"}`, pin `deno` in `mise.toml`, and document the
-commands in the README (`deno run --no-config --no-prompt --allow-read <id>-cli.js …`).
+commands in the README (`deno run --no-config --no-prompt --allow-read <id>-cli.js …`,
+run from the unzipped local-server folder).
 
 **Updating the platform in an app:** read `platform/CHANGELOG.md`, check out the new
 tag in `platform/`, rebuild, run the gate, commit the pointer with `public/`.
@@ -132,8 +140,8 @@ mise exec -- npx swp verify
 mise exec -- npx swp gate
 ```
 The gate checks accessibility, keyboard, mobile rules, URL and title, requests
-without consent, CSP, the local copy (single file, or the local-server zip run under
-Deno), the command line (under Deno, without permissions), offline and update, on the
+without consent, CSP, the local copies (single file, and the local-server zip run under
+Deno), the command line from the zip (under Deno, without permissions), offline and update, on the
 first screen and on every scenario, on desktop and phone. Report explicitly what was **not** tested
 (other browsers, real phones, real screen reader, voice control).
 

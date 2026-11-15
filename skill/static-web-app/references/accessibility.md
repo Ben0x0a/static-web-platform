@@ -92,9 +92,9 @@ focus, Esc closes.
    (each stop has a name and a role); use search (the count is announced); trigger a
    consent dialog (title and body read, Esc closes, focus returns); fold/unfold
    (state announced).
-3. **Voice Control** (macOS: Accessibility → Voice Control): say "click Download",
-   "click Privacy" and so on, using the visible words. Then "show numbers", and
-   operate a feature by number. With shortcuts **on** and then **off**, dictate a word
+3. **Voice Control** (macOS: Accessibility → Voice Control): say "click Download page",
+   "click Privacy" and so on, using the full visible label (several start with the
+   same word). Then "show numbers", and operate a feature by number. With shortcuts **on** and then **off**, dictate a word
    containing a shortcut key: nothing should fire when they're off.
 4. **Zoom 400%** (Cmd + +) on a 1280px window, and a 320px-wide window: nothing cut
    off, no horizontal scroll, sticky header not covering focus.

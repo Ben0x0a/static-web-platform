@@ -95,18 +95,20 @@ can check for updates.
 
 - **Install** (on the site): the app opens offline and updates itself. On iPhone: Share
   → Add to Home Screen. On Mac Safari: File → Add to Dock.
-- **Download**: a local copy for machines that are offline or locked down — a single
-  HTML file (or, for apps that need a real origin, a zip with a local server started
-  with Deno; see its `README.txt`). In it, *Check for updates* (after your consent)
+- **Download page**: a single HTML file for machines that are offline or locked down:
+  open it with a double-click, nothing to install.
+- **Local server (Deno)** (when offered): a zip with the full app on this computer
+  and, if the app has one, its command line. Both need Deno; the steps are in the
+  zip's `README.txt`. In a local copy, *Check for updates* (after your consent)
   compares it with the site. `public/version.json` lists the current version and the
   SHA-256 of each published copy.
 
 ## Command line
 
 <Only if `src/site.json` declares `cli`; otherwise delete this section.> The same
-operations as the page, for scripts and batch work, in `public/<id>-cli.js`
-(*Command line* link on the site). It needs [Deno](https://deno.com) 2.9 and reads
-only the files it is given; it never uses the network:
+operations as the page, for scripts and batch work, in `<id>-cli.js` inside the
+local-server zip (*Local server (Deno)*). It needs [Deno](https://deno.com) 2.9 and reads
+only the files it is given; it never uses the network. From the unzipped folder:
 
 ```bash
 deno run --no-config --no-prompt --allow-read <id>-cli.js --help

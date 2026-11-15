@@ -1,7 +1,9 @@
 /*
-  ui/dialogs.ts — the platform's accessible dialogs: consent, privacy, install help.
+  ui/dialogs.ts — the platform's accessible dialogs: consent, privacy, install
+  help, share, accessibility.
 
-  Defines : mountDialogs() → { askConsent, openPrivacy, openInstallHelp }.
+  Defines : mountDialogs() → { askConsent, confirmShare, openPrivacy,
+            openInstallHelp, openAccessibility }.
   Used by : platform.ts.
   Uses    : ui/dom.ts, core/i18n.ts, services/consent.ts, services/storage.ts.
 

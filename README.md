@@ -9,10 +9,12 @@ everything that must behave the same everywhere:
   decisions revocable in *Privacy*), with a generated Content-Security-Policy as the
   hard ceiling.
 - **One source, several outputs:** an installable app (PWA, offline, updates itself);
-  a local copy chosen per app — a single-file HTML download, or a zip with a local
-  server for apps that need a real origin, or none — that can check for updates
-  (after consent); and, for apps that compute something, a command-line version that
-  is also the app's library, sharing the page's code (runs with Deno, no network).
+  *Download page*, a single HTML file (the simple choice: double-click, nothing to
+  install); *Local server (Deno)*, a zip with the full app on a Deno launcher
+  (apps with features that need a real origin, and every app that computes
+  something: the zip also holds its command line, which is the app's library too,
+  shares the page's code and uses no network; installation steps in its
+  `README.txt`). Local copies can check for updates (after consent).
 - **Accessibility built in:** dialogs, a single-key shortcut switch (WCAG 2.1.4), a
   theme choice, focus kept visible under sticky headers, and phone rules (16px fields,
   44px targets).
@@ -73,7 +75,7 @@ release, and installs it through npm from that folder:
 
 ```bash
 git submodule add https://github.com/<owner>/static-web-platform.git platform
-git -C platform checkout v2.0.1
+git -C platform checkout v2.1.0
 ```
 ```jsonc
 // package.json of the app
@@ -89,7 +91,7 @@ app has its own bundler). In CI, `actions/checkout` needs `submodules: true`.
 ```ts
 const platform = startPlatform<MyOptions>({ strings: { fr: { … } } });   // first, once
 platform.site                       // SiteConfig: id, title, lang, mode ("site" | "single" | "local" | "dev"),
-                                    //   distribution, download, cli, version, options…
+                                    //   download, local (which copies exist), version, options…
 platform.t("key", { n: 3 })         // UI strings (platform + app), missing key = error
 platform.store / sessionStore       // prefixed storage, never throws
 platform.net.fetch(url, init, { disclose })    // consent-gated; null when refused; redirects never followed
@@ -133,9 +135,10 @@ I/O, for unit tests.
 
 ### Page contract (`src/index.html`)
 `<!-- BUILD:HEAD -->`, `<!-- BUILD:BODY -->`, an element `#app-actions` (the platform
-adds Install / Download / Command line / Check for updates / Privacy / Accessibility /
-status; ids `#install`, `#download`, `#download-cli`, `#check-update`, `#privacy`,
-`#accessibility`, `#status`),
+adds Install / Download page / Local server (Deno) / Check for updates / Privacy /
+Accessibility / status; ids `#install`, `#download`, `#download-local`,
+`#check-update`, `#privacy`, `#accessibility`,
+`#status`),
 `<html lang>`, a skip link, and `data-swp-sticky` on any sticky header (the platform
 keeps focused elements visible below it).
 
@@ -144,9 +147,9 @@ keeps focused elements visible below it).
 |---|---|
 | `id`, `title`, `shortName`, `lang`, `themeColor` | identity (storage prefix, manifest, `<title>`) |
 | `siteUrl` | production URL ("" until known: local copies offer no update check) |
-| `distribution` | the local copy: `"single"` (default, the single HTML file), `"local-server"` (`<id>-local.zip`: the page + a Deno launcher on 127.0.0.1, for apps that need a real origin; each app has its own default port in 29170–29998, a block the IANA registry leaves unassigned), `"site-only"` (none) |
-| `downloadName` | file name of the single-file download (required with `"single"`) |
-| `cli` | `{ "entry": "src/cli/main.ts" }`: command-line version, published as `<id>-cli.js` |
+| `distribution` | the local copies: `"single"` (default, the single HTML file), `"local-server"` (the single file **and** `<id>-local.zip`: the page + a Deno launcher on 127.0.0.1, for apps with features that need a real origin; an app with `cli` always gets the zip; each app has its own default port in 29170–29998, a block the IANA registry leaves unassigned), `"site-only"` (none) |
+| `downloadName` | file name of the single-file download (required unless `"site-only"`) |
+| `cli` | `{ "entry": "src/cli/main.ts" }`: command-line version, `<id>-cli.js` inside `<id>-local.zip` (so the zip is published even with `"single"`; not allowed with `"site-only"`) |
 | `entry` | bundler entry (default `src/main.ts`) |
 | `linkCheck` | `{ "sources": ["src/content.ts"], "output": "data/link-status.json" }`: links checked by `swp links` (status file read by a `core/` loader) |
 | `netOriginsFrom` | `[{ "data": "data/rdap-dns.json", "directive": "connect-src", "purpose": "…", "scope": "request" }]`: every https origin listed in that dataset, declared exactly (one group in *Privacy*) |
@@ -226,7 +229,8 @@ Deno is the second barrier: the CLI runs without `--allow-net`.
 **Node and Deno:** `mise.toml` pins exact versions (`node = "24.21.0"`, and
 `deno = "2.9.8"` for apps with a command line or the local-server copy, which the gate
 runs). `swp build` refuses another Node, because npm versions differ in how they link
-package binaries. Users of the command line need Deno 2.9 (LTS) only:
+package binaries. Users of the local server and the command line need Deno 2.9 (LTS)
+only; from the unzipped folder:
 `deno run --no-config --no-prompt --allow-read <id>-cli.js <command> FILE`.
 
 ## Commands

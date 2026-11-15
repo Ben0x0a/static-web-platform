@@ -16,8 +16,10 @@ PLATFORM_PACKAGE_NAME = "static-web-platform"
 PLATFORM_CLI_ENTRY = PLATFORM_PACKAGE_NAME + "/cli"   # the command-line shell's only platform import
 SITE_FILENAME = "site.json"
 REQUIRED_SITE_KEYS = ("id", "title", "shortName", "lang", "themeColor", "siteUrl", "netOrigins", "options")
-# What the local copy is (site.json "distribution"): the single HTML file, a zip
-# with a local server (apps that need a real origin), or none (hosted site only).
+# The local copies (site.json "distribution"): the single HTML file; the single
+# file AND a zip with a local server (apps with features that need a real
+# origin: the file stays the simple choice, the zip is the full app); or none.
+# An app with a command line ("cli") always has the zip: the CLI ships in it.
 DISTRIBUTIONS = ("single", "local-server", "site-only")
 DEFAULT_DISTRIBUTION = "single"
 DEFAULT_ENTRY = "src/main.ts"
@@ -73,18 +75,24 @@ class Project:
 
     @property
     def cli_filename(self) -> str:
-        """Published name of the CLI bundle (also the app's library for other programs)."""
+        """Name of the CLI bundle in the zip (also the app's library for other programs)."""
         return f"{self.site['id']}-cli.js"
 
     @property
-    def local_zip_filename(self) -> str:
-        """Published name of the local-server package (distribution "local-server")."""
-        return f"{self.site['id']}-local.zip"
+    def local_zip_filename(self) -> str | None:
+        """Published name of the local-server package (with the CLI, if any), or None.
+
+        WHY a CLI implies the zip: an app that computes something offers two
+        choices, the page (beginners) and the local server with its command
+        line (advanced: both need Deno, both run from the same folder).
+        """
+        has_zip = self.distribution == "local-server" or self.cli_entry is not None
+        return f"{self.site['id']}-local.zip" if has_zip else None
 
     @property
     def download_filename(self) -> str | None:
-        """What the Download link fetches: the single file, the zip, or nothing."""
-        return {"single": self.site.get("downloadName"), "local-server": self.local_zip_filename}.get(self.distribution)
+        """The single file the Download link fetches; None for "site-only"."""
+        return None if self.distribution == "site-only" else self.site.get("downloadName")
 
     @property
     def app_build_dir(self) -> pathlib.Path:
@@ -183,10 +191,10 @@ def load_project(root: pathlib.Path, site_url_override: str | None = None) -> Pr
     distribution = site.get("distribution", DEFAULT_DISTRIBUTION)
     if distribution not in DISTRIBUTIONS:
         raise SystemExit(f'{site_path}: "distribution" must be one of {", ".join(DISTRIBUTIONS)}')
-    # Invariant: only the single file is named by the app; the other profiles
-    # either derive their file name from the id or publish no download.
-    if distribution == "single" and not site.get("downloadName"):
-        raise SystemExit(f'{site_path}: "downloadName" is required with the "single" distribution')
+    # Invariant: every profile with a local copy publishes the single file, named
+    # by the app; only "site-only" has none.
+    if distribution != "site-only" and not site.get("downloadName"):
+        raise SystemExit(f'{site_path}: "downloadName" is required unless "distribution" is "site-only"')
     if "cli" in site:
         cli = site["cli"]
         entry = cli.get("entry") if isinstance(cli, dict) else None
@@ -197,6 +205,8 @@ def load_project(root: pathlib.Path, site_url_override: str | None = None) -> Pr
         if (entry_path is None or not entry_path.is_file()
                 or not entry_path.is_relative_to((root / "src" / "cli").resolve())):
             raise SystemExit(f'{site_path}: "cli" must be {{"entry": "src/cli/<file>.ts"}} naming an existing file')
+        if distribution == "site-only":
+            raise SystemExit(f'{site_path}: "cli" ships in the local-server zip: not with "distribution" "site-only"')
     for mode in site.get("modes", []):
         # Invariant: a declared mode is a folder of core/ — a typo would silently
         # leave the real folder unprotected.

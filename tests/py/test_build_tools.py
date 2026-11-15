@@ -21,7 +21,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools"))
 from swp_tools.assemble import config_js, headers_file, inline_css, inline_js  # noqa: E402
 from swp_tools.config import (Project, expand_net_origins_from, load_project, validate_net_origins,  # noqa: E402
                               validate_support)
-from swp_tools.package import PORT_BLOCK, default_port, local_zip  # noqa: E402
+from swp_tools.package import LAUNCH_COMMAND, PORT_BLOCK, cli_command, default_port, local_zip  # noqa: E402
 from swp_tools.cors import ORIGIN_NULL, check_cors, copy_origins  # noqa: E402
 from swp_tools.csp import build_csp  # noqa: E402
 from swp_tools.serve import make_server, parse_headers_file  # noqa: E402
@@ -72,7 +72,8 @@ class AssembleTest(unittest.TestCase):
                        "single", "abc123", "2026-10-03")
         self.assertIn('"mode": "single"', js)
         self.assertIn('"download": "app.html"', js)
-        self.assertIn('"cli": null', js)
+        self.assertIn('"local": null', js)
+        self.assertNotIn('"cli"', js)
         self.assertIn('"version": "abc123"', js)
         self.assertTrue(js.splitlines()[1].startswith("window.__SWP_SITE__ = {"))
 
@@ -83,18 +84,23 @@ class AssembleTest(unittest.TestCase):
         self.assertEqual(directives(build_csp(with_workers, "site"))["worker-src"], ["'self'"])
 
     def test_download_is_an_attachment_with_and_without_html(self):
-        rules = parse_headers_text(headers_file("app.html"))
+        rules = parse_headers_text(headers_file(["app.html"]))
         for path in ("/app.html", "/app"):
             self.assertIn(("Content-Disposition", 'attachment; filename="app.html"'), rules[path], path)
 
     def test_cors_only_on_version_json(self):
-        headers = headers_file("app.html")
+        headers = headers_file(["app.html"])
         block = headers.split("/version.json")[1].split("\n\n")[0]
         self.assertIn("Access-Control-Allow-Origin: *", block)
         self.assertEqual(headers.count("Access-Control-Allow-Origin"), 1)
 
     def test_no_download_no_attachment_rule(self):
-        self.assertNotIn("Content-Disposition", headers_file(None))
+        self.assertNotIn("Content-Disposition", headers_file([]))
+
+    def test_single_file_and_zip_are_both_attachments(self):
+        rules = parse_headers_text(headers_file(["app.html", "app-local.zip"]))
+        self.assertIn(("Content-Disposition", 'attachment; filename="app-local.zip"'), rules["/app-local.zip"])
+        self.assertIn(("Content-Disposition", 'attachment; filename="app.html"'), rules["/app"])
 
     def test_local_copy_is_the_site_policy_plus_its_site(self):
         csp = directives(build_csp(SITE, "local"))
@@ -127,12 +133,25 @@ class SiteValidationTest(unittest.TestCase):
             self.assertEqual(load_project(make_app({**SITE_JSON, "distribution": distribution})).distribution, distribution)
         self.assert_rejected({**SITE_JSON, "distribution": "zip"}, '"distribution" must be one of')
 
-    def test_download_follows_the_distribution(self):
-        site_only = {key: value for key, value in SITE_JSON.items() if key != "downloadName"}
-        self.assertIsNone(load_project(make_app({**site_only, "distribution": "site-only"})).download_filename)
-        self.assertEqual(load_project(make_app({**site_only, "distribution": "local-server"})).download_filename,
-                         "app-local.zip")
-        self.assert_rejected(site_only, '"downloadName" is required')
+    def test_downloads_follow_the_distribution(self):
+        unnamed = {key: value for key, value in SITE_JSON.items() if key != "downloadName"}
+        site_only = load_project(make_app({**unnamed, "distribution": "site-only"}))
+        self.assertEqual((site_only.download_filename, site_only.local_zip_filename), (None, None))
+        single = load_project(make_app(SITE_JSON))
+        self.assertEqual((single.download_filename, single.local_zip_filename), ("app.html", None))
+        # local-server: the single file stays the simple choice, the zip is added.
+        local = load_project(make_app({**SITE_JSON, "distribution": "local-server"}))
+        self.assertEqual((local.download_filename, local.local_zip_filename), ("app.html", "app-local.zip"))
+        for distribution in ("single", "local-server"):
+            self.assert_rejected({**unnamed, "distribution": distribution}, '"downloadName" is required')
+
+    def test_a_cli_brings_the_zip(self):
+        # An app that computes something: the page, and the local server with its CLI.
+        with_cli = {**SITE_JSON, "cli": {"entry": "src/cli/main.ts"}}
+        project = load_project(make_app(with_cli, {"src/cli/main.ts": ""}))
+        self.assertEqual((project.download_filename, project.local_zip_filename), ("app.html", "app-local.zip"))
+        self.assert_rejected({**with_cli, "distribution": "site-only"}, '"cli" ships in the local-server zip',
+                             {"src/cli/main.ts": ""})
 
     def test_cli_entry_must_be_in_src_cli(self):
         project = load_project(make_app({**SITE_JSON, "cli": {"entry": "src/cli/main.ts"}}, {"src/cli/main.ts": ""}))
@@ -150,9 +169,9 @@ class LocalZipTest(unittest.TestCase):
     PROJECT = Project(root=pathlib.Path("."), site=SITE, platform_dir=pathlib.Path("."))
     FILES = {"index.html": b"<p>page</p>", "icons/icon.svg": b"<svg/>", "app.js": b"run()"}
 
-    def zip_bytes(self, files: dict[str, bytes]) -> bytes:
+    def zip_bytes(self, files: dict[str, bytes], project: Project | None = None, cli: str | None = None) -> bytes:
         target = pathlib.Path(tempfile.mkdtemp(prefix="zip_")) / "app-local.zip"
-        local_zip(self.PROJECT, files, "serve()", target)
+        local_zip(project or self.PROJECT, files, "serve()", cli, target)
         return target.read_bytes()
 
     def test_reproducible_whatever_the_input_order(self):
@@ -175,6 +194,17 @@ class LocalZipTest(unittest.TestCase):
                 self.assertEqual(info.date_time, (1980, 1, 1, 0, 0, 0))
                 self.assertEqual(info.compress_type, zipfile.ZIP_STORED)
             self.assertEqual(archive.read("app-local/public/app.js"), b"run()")
+            self.assertNotIn("app-local/app-cli.js", names)
+            self.assertNotIn("Command line", archive.read("app-local/README.txt").decode("utf-8"))
+
+    def test_the_cli_ships_next_to_the_launcher(self):
+        project = Project(root=pathlib.Path("."), site={**SITE, "cli": {"entry": "src/cli/main.ts"}},
+                          platform_dir=pathlib.Path("."))
+        with zipfile.ZipFile(io.BytesIO(self.zip_bytes(self.FILES, project, "main()"))) as archive:
+            self.assertEqual(archive.read("app-local/app-cli.js"), b"main()")
+            readme = archive.read("app-local/README.txt").decode("utf-8")
+        self.assertIn(cli_command(project), readme)
+        self.assertIn(LAUNCH_COMMAND, readme)
 
 
 
@@ -249,7 +279,7 @@ class PrettyUrlServeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             (root / "app.html").write_text("<p>offline copy</p>", encoding="utf-8")
-            (root / "_headers").write_text(headers_file("app.html"), encoding="utf-8")
+            (root / "_headers").write_text(headers_file(["app.html"]), encoding="utf-8")
             server = make_server(root)
             threading.Thread(target=server.serve_forever, daemon=True).start()
             try:
@@ -348,7 +378,9 @@ class CorsCheckTest(unittest.TestCase):
             return Project(root=pathlib.Path("."), site={**SITE, "distribution": distribution},
                            platform_dir=pathlib.Path("."))
         self.assertEqual(copy_origins(project("single")), [ORIGIN_NULL])
-        self.assertEqual(copy_origins(project("local-server")), [f"http://127.0.0.1:{default_port(project('single'))}"])
+        # local-server: the single file AND the local server.
+        self.assertEqual(copy_origins(project("local-server")),
+                         [ORIGIN_NULL, f"http://127.0.0.1:{default_port(project('single'))}"])
         self.assertEqual(copy_origins(project("site-only")), [])
         self.assertEqual(copy_origins(None), [ORIGIN_NULL])
 

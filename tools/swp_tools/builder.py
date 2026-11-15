@@ -6,9 +6,10 @@ Uses    : config, version, bundle, assemble, package.
 
 Outputs in public/: index.html + config.js + app.js + base.css (+ app.css) +
 sw.js + manifest.webmanifest + _headers + icons/ (hosted site); the local
-copy chosen by site.json "distribution" — the single file (<downloadName>),
-or <id>-local.zip (local server), or none; <id>-cli.js when the app has a
-command line; and version.json (version, date, files and their SHA-256).
+copies chosen by site.json "distribution" — the single file (<downloadName>),
+plus <id>-local.zip (local server, and the command line when the app has one)
+for "local-server" or any app with "cli", none for "site-only"; and
+version.json (version, date, each published copy and its SHA-256).
 """
 
 import datetime
@@ -69,14 +70,9 @@ def _page_files(project: Project, mode: str, bundle: AppBundle, version: str, da
         "config.js": config_js(project, mode, version, date, assets).encode("utf-8"),
         # The local copy keeps the security headers (the launcher applies them)
         # but has no download of its own.
-        "_headers": headers_file(project.download_filename if mode == "site" else None).encode("utf-8"),
+        "_headers": headers_file([name for name in (project.download_filename, project.local_zip_filename)
+                                  if name and mode == "site"]).encode("utf-8"),
     }
-
-
-# version.json "download" when the app has no local copy: the site's home page.
-# WHY not null: single files built before 2.0 read it as `new URL(download, site)`,
-# and would otherwise point their update notice at <site>/null.
-NO_DOWNLOAD = "./"
 
 
 def build(project: Project, out: pathlib.Path, date: str | None = None) -> None:
@@ -103,27 +99,28 @@ def build(project: Project, out: pathlib.Path, date: str | None = None) -> None:
                 *(assets if project.precache_assets else [])]
     files["sw.js"] = service_worker(project, version, precache).encode("utf-8")
     download = project.download_filename
-    if project.distribution == "single":
+    if download:
         files[download] = render_page(project, "single", bundle, version, date, assets).encode("utf-8")
-    if project.cli_entry is not None:
-        files[project.cli_filename] = bundle_cli(project, version, date).encode("utf-8")
     for name, data in files.items():
         (out / name).parent.mkdir(parents=True, exist_ok=True)
         (out / name).write_bytes(data)
-    if project.distribution == "local-server":
+    zip_name = project.local_zip_filename
+    if zip_name:
         local = {**shared, **_page_files(project, "local", bundle, version, date, assets)}
-        local_zip(project, local, bundle_launcher(project), out / download)
+        cli = bundle_cli(project, version, date) if project.cli_entry is not None else None
+        local_zip(project, local, bundle_launcher(project), cli, out / zip_name)
 
     download_sha = _sha256(out / download) if download else None
-    cli = {"file": project.cli_filename, "sha256": _sha256(out / project.cli_filename)} if project.cli_entry else None
+    local_copy = {"file": zip_name, "sha256": _sha256(out / zip_name)} if zip_name else None
     (out / VERSION_FILENAME).write_text(json.dumps({
-        "version": version, "date": date, "download": download or NO_DOWNLOAD, "sha256": download_sha, "cli": cli,
+        "version": version, "date": date, "download": download, "sha256": download_sha,
+        "local": local_copy,
     }, indent=2) + "\n", encoding="utf-8", newline="\n")
     if not project.site["siteUrl"]:
         _LOG.warning("site.json siteUrl is empty: local copies will not offer update checks")
     _LOG.info(f"Built {out} — version {version}; distribution {project.distribution}"
               + (f", download {download} sha256 {download_sha}" if download else "")
-              + (f", cli {cli['file']}" if cli else "")
+              + (f", local {zip_name}" + (" (with cli)" if project.cli_entry else "") if zip_name else "")
               + f"; app.js {len(bundle.js.encode('utf-8')):,} bytes, app.css {len(bundle.css.encode('utf-8')):,} bytes")
 
 

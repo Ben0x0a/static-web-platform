@@ -9,9 +9,8 @@ import type { StringTable } from "./i18n.ts";
 
 export const PLATFORM_STRINGS: StringTable = {
   en: {
-    download: "Download", downloadTitle: "Offline copy: a single HTML file",
-    downloadLocalTitle: "Offline copy: a zip with a local server (runs with Deno)",
-    downloadCli: "Command line", downloadCliTitle: "Command-line version and library (runs with Deno)",
+    download: "Download page", downloadTitle: "Offline copy: a single HTML file",
+    downloadLocal: "Local server (Deno)", downloadLocalTitle: "Full app on this computer: a zip that needs Deno (steps in its README.txt)",
     install: "Install", installTitle: "Install the app (updates itself)",
     checkUpdate: "Check for updates", privacy: "Privacy",
     offlineCopy: "Offline copy — version {version} ({date})",
@@ -48,12 +47,11 @@ export const PLATFORM_STRINGS: StringTable = {
     installMac: "Mac (Safari 17 or later): File menu → “Add to Dock”.",
     installChromium: "Chrome / Edge (computer): “Install” icon in the address bar, or in the browser menu.",
     installAndroid: "Android (Chrome): menu ⋮ → “Install app” or “Add to Home screen”.",
-    installOther: "Other browsers (e.g. Firefox on a computer): use “Download” instead.",
+    installOther: "Other browsers (e.g. Firefox on a computer): use “Download page” instead.",
   },
   fr: {
-    download: "Télécharger", downloadTitle: "Copie hors ligne : un seul fichier HTML",
-    downloadLocalTitle: "Copie hors ligne : un zip avec un serveur local (s'exécute avec Deno)",
-    downloadCli: "Ligne de commande", downloadCliTitle: "Version en ligne de commande et bibliothèque (s'exécute avec Deno)",
+    download: "Télécharger la page", downloadTitle: "Copie hors ligne : un seul fichier HTML",
+    downloadLocal: "Serveur local (Deno)", downloadLocalTitle: "Application complète sur cet ordinateur : un zip qui demande Deno (étapes dans son README.txt)",
     install: "Installer", installTitle: "Installer l'application (se met à jour seule)",
     checkUpdate: "Vérifier les mises à jour", privacy: "Confidentialité",
     offlineCopy: "Copie hors ligne — version {version} ({date})",
@@ -90,6 +88,6 @@ export const PLATFORM_STRINGS: StringTable = {
     installMac: "Mac (Safari 17 ou plus récent) : menu Fichier → « Ajouter au Dock ».",
     installChromium: "Chrome / Edge (ordinateur) : icône « Installer » dans la barre d'adresse, ou dans le menu du navigateur.",
     installAndroid: "Android (Chrome) : menu ⋮ → « Installer l'application » ou « Ajouter à l'écran d'accueil ».",
-    installOther: "Autres navigateurs (p. ex. Firefox sur ordinateur) : utilisez plutôt « Télécharger ».",
+    installOther: "Autres navigateurs (p. ex. Firefox sur ordinateur) : utilisez plutôt « Télécharger la page ».",
   },
 };

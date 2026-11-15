@@ -47,11 +47,14 @@ def _probe(url: str, origin: str) -> CorsResult:
 
 
 def copy_origins(project: Project | None) -> list[str]:
-    """The Origin the app's local copy sends (site.json "distribution"); the single file's without an app."""
-    distribution = project.distribution if project else "single"
-    if distribution == "local-server":
-        return [f"http://127.0.0.1:{default_port(project)}"]
-    return [ORIGIN_NULL] if distribution == "single" else []
+    """The Origins the app's local copies send: the single file's, then the local server's (default port).
+
+    Without an app: the single file's only.
+    """
+    if project is None:
+        return [ORIGIN_NULL]
+    return ([ORIGIN_NULL] if project.download_filename else []) + (
+        [f"http://127.0.0.1:{default_port(project)}"] if project.local_zip_filename else [])
 
 
 def check_cors(urls: list[str], origins: list[str]) -> list[CorsResult]:

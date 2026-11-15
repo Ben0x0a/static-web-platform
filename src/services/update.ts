@@ -12,7 +12,8 @@ import type { Network } from "./network.ts";
 export type UpdateResult =
   | { kind: "declined" }
   | { kind: "up-to-date" }
-  | { kind: "available"; info: VersionInfo; downloadUrl: string }
+  /** `file`: the new copy of the same kind; null when the site no longer offers one (downloadUrl = the site). */
+  | { kind: "available"; info: VersionInfo; downloadUrl: string; file: string | null }
   | { kind: "failed"; reason: string };
 
 export async function checkForUpdate(site: SiteConfig<unknown>, net: Network): Promise<UpdateResult> {
@@ -23,9 +24,10 @@ export async function checkForUpdate(site: SiteConfig<unknown>, net: Network): P
     if (!res) return { kind: "declined" };
     if (!res.ok) return { kind: "failed", reason: `HTTP ${res.status}` };
     const info = (await res.json()) as VersionInfo;
-    return isUpdateAvailable(site.version, info)
-      ? { kind: "available", info, downloadUrl: new URL(info.download, site.siteUrl).href }
-      : { kind: "up-to-date" };
+    if (!isUpdateAvailable(site.version, info)) return { kind: "up-to-date" };
+    // A local-server copy is replaced by a new zip, a single file by a new single file.
+    const file = (site.mode === "local" ? info.local?.file : info.download) ?? null;
+    return { kind: "available", info, file, downloadUrl: new URL(file ?? "./", site.siteUrl).href };
   } catch (err) {
     // Offline, or the browser blocks file:// → https: the copy keeps working.
     return { kind: "failed", reason: (err as Error).message };

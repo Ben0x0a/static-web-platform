@@ -42,12 +42,10 @@ export interface SiteConfig<O = Record<string, unknown>> {
   lang: string;
   /** Production URL ("" until known); local copies check it for updates. */
   siteUrl: string;
-  /** What the local copy is (site.json "distribution"). */
-  distribution: Distribution;
-  /** File the Download link fetches (single file or zip); null when there is none. */
+  /** The single HTML file "Download page" fetches (the simple choice); null for "site-only". */
   download: string | null;
-  /** File of the command-line version (Deno), null when the app has none. */
-  cli: string | null;
+  /** The local-server zip "Local server (Deno)" fetches (with the CLI, if any); null when none. */
+  local: string | null;
   netOrigins: Record<string, NetOrigin>;
   options: O;
   mode: PageMode;
@@ -64,9 +62,6 @@ export interface SiteConfig<O = Record<string, unknown>> {
   /** "Support the author" link (site.json "support"), null when the app has none. */
   support: { url: string } | null;
 }
-
-/** "single" file, "local-server" zip, or none ("site-only"). */
-export type Distribution = "single" | "local-server" | "site-only";
 
 /**
  * "site"   = the hosted app;
@@ -86,13 +81,10 @@ export const isLocalCopy = (mode: PageMode): boolean => mode === "single" || mod
 export interface VersionInfo {
   version: string;
   date: string;
-  /**
-   * The local copy's file (single file or zip), relative to the site; "./" (the
-   * site's home page) when the app has none, so older copies still get a valid link.
-   */
-  download: string;
-  /** SHA-256 of that file; null when the app has no local copy. */
+  /** The single file, relative to the site; null when the app has none. */
+  download: string | null;
+  /** SHA-256 of the single file; null when the app has none. */
   sha256: string | null;
-  /** The command-line bundle and its SHA-256, when the app has one. */
-  cli: { file: string; sha256: string } | null;
+  /** The local-server zip (with the CLI, if any) and its SHA-256, when the app has one. */
+  local: { file: string; sha256: string } | null;
 }

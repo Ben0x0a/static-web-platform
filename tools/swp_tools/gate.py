@@ -15,15 +15,17 @@ Defines : run_gate() and the checks below.
                     (WCAG 1.4.12), single keys inert when shortcuts are off
                     (2.1.4), focus visible in forced colours, offline reload,
                     privacy/accessibility/install dialogs scanned.
-          Copy    : per site.json "distribution" —
-                    single: self-contained, no request on open, CSP, axe,
-                    labels, mobile, keyboard, update check asks consent first
-                    → "up to date" → "new version" after version.json changes;
-                    local-server: the zip downloaded from the page, its
-                    launcher started under Deno (127.0.0.1 only), foreign Host
-                    refused, then the same screen and update checks;
+          Copies  : per site.json "distribution" —
+                    single file (single and local-server): self-contained, no
+                    request on open, CSP, axe, labels, mobile, keyboard, update
+                    check asks consent first → "up to date" → "new version"
+                    after version.json changes;
+                    local server (local-server, or any app with "cli"): the
+                    zip downloaded from its own link, its launcher started
+                    under Deno (127.0.0.1 only), foreign Host refused, then the
+                    same screen and update checks;
                     site-only: no Download link.
-          CLI     : (site.json "cli") its link downloads the bundle; --help and
+          CLI     : (site.json "cli") the bundle in the zip; --help and
                     --version run under Deno WITHOUT any permission.
 Used by : cli.py (`swp gate`), CI.
 Uses    : builder.py, config.py, serve.py, package.py; the app's scenarios.json;
@@ -524,14 +526,17 @@ def check_offline(page: Page, context, report: Report) -> None:
 
 
 def _download(page: Page, selector: str, target: pathlib.Path) -> pathlib.Path:
+    """Download through the page's own link."""
     with page.expect_download() as info:
         page.click(selector)
     info.value.save_as(target)
     return target
 
 
-def check_update(local: Page, watch: Watch, site_dir: pathlib.Path, report: Report, label: str) -> None:
-    """A local copy's update check: consent first, "up to date", then "new version" with a working download."""
+def check_update(local: Page, watch: Watch, site_dir: pathlib.Path, report: Report, label: str,
+                 expected: str) -> None:
+    """A local copy's update check: consent first, "up to date", then "new version" with a
+    working download of `expected` (the same kind of copy: single file or zip)."""
     if local.locator("#check-update").count() == 0:
         report.add(Status.SKIP, f"{label}: update check", "no #check-update")
     else:
@@ -564,12 +569,14 @@ def check_update(local: Page, watch: Watch, site_dir: pathlib.Path, report: Repo
                 disposition, final_url = "", f"{href} ({err})"
             report.check("attachment" in disposition, f"{label}: update notice link downloads the new copy",
                          f"{final_url} answered without Content-Disposition: attachment ({disposition or 'none'})")
+            report.check(f'filename="{expected}"' in disposition, f"{label}: update notice gives {expected}",
+                         f"{final_url}: {disposition or 'no Content-Disposition'}")
         finally:
             version_file.write_text(original, encoding="utf-8")
 
 
 def check_single_file(page: Page, context, site_dir: pathlib.Path, origin: str, work: pathlib.Path,
-                      axe_src: str, report: Report) -> None:
+                      axe_src: str, report: Report, expected: str) -> None:
     copy = _download(page, "#download", work / "copy.download.html")
     html = copy.read_text(encoding="utf-8")
     external_refs = re.findall(r'<(?:script[^>]+src|link[^>]+rel="(?:stylesheet|manifest|apple-touch-icon)")[^>]*>', html)
@@ -588,8 +595,9 @@ def check_single_file(page: Page, context, site_dir: pathlib.Path, origin: str, 
     check_phone_rules(local, report, "single file phone")
     local.set_viewport_size(DESKTOP)
 
-    check_update(local, watch, site_dir, report, "single file")
+    check_update(local, watch, site_dir, report, "single file", expected)
     check_reflow(local, report, "single file")
+    local.close()
 
 
 LAUNCHER_START_SECONDS = 15
@@ -608,19 +616,20 @@ def _deno(report: Report, label: str) -> str | None:
     return deno
 
 
-def check_local_server(page: Page, context, site_dir: pathlib.Path, origin: str, work: pathlib.Path,
-                       axe_src: str, report: Report) -> None:
-    label = "local copy"
-    deno = _deno(report, label)
-    if deno is None:
-        return
-    archive = _download(page, "#download", work / "local.zip")
+def unzip_local(page: Page, work: pathlib.Path, report: Report) -> pathlib.Path | None:
+    """Download the zip through #download-local and unzip it: the folder holding serve.js, or None."""
+    archive = _download(page, "#download-local", work / "local.zip")
     with zipfile.ZipFile(archive) as zipped:
         zipped.extractall(work / "local")
     launchers = list((work / "local").glob("*/serve.js"))
-    if not report.check(len(launchers) == 1, f"{label}: zip holds one launcher", f"found {len(launchers)} serve.js"):
-        return
-    folder = launchers[0].parent
+    if not report.check(len(launchers) == 1, "local copy: zip holds one launcher", f"found {len(launchers)} serve.js"):
+        return None
+    return launchers[0].parent
+
+
+def check_local_server(folder: pathlib.Path, deno: str, context, site_dir: pathlib.Path, origin: str,
+                       axe_src: str, report: Report, expected: str) -> None:
+    label = "local copy"
     port = _free_port()
     launcher = subprocess.Popen([deno, *LAUNCH_COMMAND.split()[1:], "--port", str(port)], cwd=folder,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -660,7 +669,7 @@ def check_local_server(page: Page, context, site_dir: pathlib.Path, origin: str,
         local.set_viewport_size(PHONE)
         check_phone_rules(local, report, f"{label} phone")
         local.set_viewport_size(DESKTOP)
-        check_update(local, watch, site_dir, report, label)
+        check_update(local, watch, site_dir, report, label, expected)
         check_reflow(local, report, label)
         local.close()
     finally:
@@ -670,14 +679,11 @@ def check_local_server(page: Page, context, site_dir: pathlib.Path, origin: str,
             launcher.stdout.close()
 
 
-def check_cli(page: Page, project, site_dir: pathlib.Path, work: pathlib.Path, report: Report) -> None:
+def check_cli(folder: pathlib.Path, deno: str, project, site_dir: pathlib.Path, report: Report) -> None:
     label = "command line"
-    if not report.check(page.locator("#download-cli").count() == 1, f"{label}: download link on the site"):
+    bundle = folder / project.cli_filename
+    if not report.check(bundle.is_file(), f"{label}: {project.cli_filename} in the zip"):
         return
-    deno = _deno(report, label)
-    if deno is None:
-        return
-    bundle = _download(page, "#download-cli", work / project.cli_filename)
     version = json.loads((site_dir / "version.json").read_text(encoding="utf-8"))["version"]
     # No permission flag at all: --help and --version must need none, and
     # --no-prompt turns any attempt into an error instead of a question.
@@ -738,14 +744,25 @@ def run_gate(root: pathlib.Path) -> Report:
                 page.reload()
                 check_single_keys_inert(page, report, "site")
                 check_offline(page, context, report)
-                if project.distribution == "single":
-                    check_single_file(page, context, site_dir, origin, work, axe_src, report)
-                elif project.distribution == "local-server":
-                    check_local_server(page, context, site_dir, origin, work, axe_src, report)
-                else:
+                if project.distribution == "site-only":
                     report.check(page.locator("#download").count() == 0, "site-only: no Download link")
-                if project.cli_entry is not None:
-                    check_cli(page, project, site_dir, work, report)
+                else:
+                    check_single_file(page, context, site_dir, origin, work, axe_src, report,
+                                      project.download_filename)
+                if project.local_zip_filename:
+                    # The link and the zip do not need Deno: checked first, so a
+                    # missing Deno never hides a missing link.
+                    linked = report.check(page.locator("#download-local").count() == 1,
+                                          "local copy: Local server (Deno) link")
+                    folder = unzip_local(page, work, report) if linked else None
+                    deno = _deno(report, "local copy")
+                    if folder is not None and deno is not None:
+                        check_local_server(folder, deno, context, site_dir, origin, axe_src, report,
+                                           project.local_zip_filename)
+                        if project.cli_entry is not None:
+                            check_cli(folder, deno, project, site_dir, report)
+                else:
+                    report.check(page.locator("#download-local").count() == 0, "no local-server zip: no Local server (Deno) link")
                 check_reflow(page, report, "site")
                 context.close()
 

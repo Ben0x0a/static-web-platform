@@ -113,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{'OK  ' if r.allowed else 'FAIL'}  {r.url}  (Origin: {r.origin})  {r.detail}")
         if not site_origin(site):
             print("Note: site.json siteUrl is empty — only the local copy's origin was checked.")
-        if project and project.distribution == "local-server":
+        if project and project.local_zip_filename:
             print("Note: a local copy on another port (busy default, or --port) sends that port in its Origin.")
         return 0 if all(r.allowed for r in results) else 1
     if args.command == "links":

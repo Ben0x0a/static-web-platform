@@ -1,14 +1,16 @@
-"""package.py — the local-server copy as one reproducible zip (distribution "local-server").
+"""package.py — the local-server copy as one reproducible zip (distribution
+"local-server", or any app with a command line).
 
-Defines : local_zip(), default_port(), LAUNCH_COMMAND, PORT_BLOCK.
+Defines : local_zip(), default_port(), cli_command(), LAUNCH_COMMAND, PORT_BLOCK.
 Used by : builder.py (public/<id>-local.zip); gate.py (unzips it to run the
-          launcher); cors.py (the Origin a local-server copy sends).
-Uses    : config.Project; the files of the "local" page (builder) and the
-          bundled launcher (bundle.bundle_launcher).
+          launcher and the CLI); assemble.py and cors.py (the default port).
+Uses    : config.Project; the files of the "local" page (builder), the bundled
+          launcher (bundle.bundle_launcher) and CLI (bundle.bundle_cli).
 
 Layout:  <id>-local/serve.js      the platform's launcher (Deno)
          <id>-local/serve.json    its default port and port block
-         <id>-local/README.txt    how to start it
+         <id>-local/<id>-cli.js   the command line, when the app has one
+         <id>-local/README.txt    installation steps and how to start each
          <id>-local/public/…      the page and its files (mode "local")
 
 WHY stored (no compression), a fixed date, sorted names and fixed attributes:
@@ -24,6 +26,7 @@ import zipfile
 
 from swp_tools.config import Project
 
+DENO_INSTALL_URL = "https://docs.deno.com/runtime/getting_started/installation/"
 LAUNCH_COMMAND = "deno run --no-config --no-prompt --allow-net=127.0.0.1 --allow-read=. serve.js"
 # Local-server ports: a block the IANA service-name and port registry leaves
 # unassigned (checked against its CSV on 2026-11-09), so no well-known service
@@ -46,35 +49,62 @@ def default_port(project: Project) -> int:
     return first + int.from_bytes(digest[:4], "big") % (last - first + 1)
 
 
+def cli_command(project: Project) -> str:
+    """How to start the command line: read permission only, never the network."""
+    return f"deno run --no-config --no-prompt --allow-read {project.cli_filename} --help"
+
+
 def _readme(project: Project) -> str:
     site = project.site
     port = default_port(project)
+    cli = "" if project.cli_entry is None else f"""
+Command line (the same operations as the page, for scripts and batch work)
+--------------------------------------------------------------------------
+From this folder:
+
+    {cli_command(project)}
+
+lists the commands. In that help, the program's name stands for the whole
+"deno run … {project.cli_filename}" part; for example:
+
+    deno run --no-config --no-prompt --allow-read {project.cli_filename} <command> FILE
+
+It may read files, nothing else (no network). To save a result with --out FILE,
+also allow writing that file: --allow-write=FILE before {project.cli_filename}.
+Other programs can also import {project.cli_filename} as a library.
+"""
     return f"""{site["title"]} — local copy
 
-This folder runs the app on this computer only, at http://127.0.0.1:{port}/.
-It needs Deno (https://deno.com). From this folder:
+1. Install Deno once (free): {DENO_INSTALL_URL}
+2. Open a terminal in this folder (or open one and `cd` into it).
+
+Full app (local server)
+-----------------------
+Run:
 
     {LAUNCH_COMMAND}
 
 then open http://127.0.0.1:{port}/ in a browser. If that port is taken, the next
 free one is used and shown (data saved in the page stays with the first port).
-To choose one: add --port N.
+To choose one: add --port N. Stop it with Ctrl+C.
 
 The permissions are the whole contract: the launcher may listen on 127.0.0.1
 (this computer) and read this folder, nothing else. It sends no data anywhere
-and logs no request. Stop it with Ctrl+C.
-
+and logs no request.
+{cli}
 Check for updates (in the page) compares this copy with {site["siteUrl"] or "the hosted site"};
 version.json there lists the SHA-256 of this zip.
 """
 
 
-def local_zip(project: Project, files: dict[str, bytes], launcher: str, target: pathlib.Path) -> None:
+def local_zip(project: Project, files: dict[str, bytes], launcher: str, cli: str | None,
+              target: pathlib.Path) -> None:
     """Write the zip to `target` (streamed to disk: assets can be large)."""
     folder = f"{project.site['id']}-local"
     first, last = PORT_BLOCK
     serve_config = {"port": default_port(project), "first": first, "last": last}
     entries = {f"{folder}/serve.js": launcher.encode("utf-8"),
+               **({f"{folder}/{project.cli_filename}": cli.encode("utf-8")} if cli is not None else {}),
                f"{folder}/serve.json": (json.dumps(serve_config, indent=2) + "\n").encode("utf-8"),
                f"{folder}/README.txt": _readme(project).encode("utf-8"),
                **{f"{folder}/public/{name}": data for name, data in files.items()}}

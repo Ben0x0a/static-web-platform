@@ -4,6 +4,55 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## 2.1.0 — 2026-11-15
+
+A minor version despite the breaking changes below: no 2.0.x app or local copy
+is in use yet.
+
+Breaking
+- Two downloads, side by side: *Download page* (`#download`, the single HTML
+  file, nothing to install) and *Local server (Deno)* (`#download-local`, the
+  zip, needs Deno). `"local-server"` now publishes the single file **as well as**
+  the zip; `downloadName` is required unless `"distribution"` is `"site-only"`.
+- The command line ships **inside** the zip (`<id>-local/<id>-cli.js`), no longer
+  as `public/<id>-cli.js`: an app with `"cli"` always gets the zip, even with
+  `"single"`; `"cli"` with `"site-only"` is rejected. The `#download-cli` link is
+  gone.
+- `SiteConfig.local` is the zip's file name (or null); `SiteConfig.cli` and
+  `SiteConfig.distribution` (and the `Distribution` type) are removed: `download`
+  and `local` say which copies exist. `VersionInfo.download` is the single file or
+  `null` (no more `"./"`); `VersionInfo.local` lists the zip and its SHA-256;
+  `VersionInfo.cli` is removed.
+- Fresh start for local copies: copies built with 2.0.x read `download` for their
+  update link, which is now the single file — a 2.0.x local-server copy would be
+  offered the single file. Replace 2.0.x copies by hand once.
+- Platform strings: added `downloadLocal`, `downloadLocalTitle`; removed
+  `downloadCli`, `downloadCliTitle`; changed `download` ("Download page") and
+  `installOther`. Platform strings ship in `en` and `fr` only: an app in another
+  language must supply the new keys, or the page throws "Missing UI string".
+
+Added
+- The zip's `README.txt` gives the installation steps: install Deno (link to its
+  guide), then the exact commands for the local server and, when present, the
+  command line.
+- `swp cors` checks both local origins (`null` and `http://127.0.0.1:<port>`) when
+  the app publishes both copies.
+- The gate checks the single file for every profile with a local copy, downloads
+  the zip from `#download-local` (checked even without Deno), runs the CLI from the
+  unzipped folder, and checks that each copy's update notice gives a copy of the
+  same kind (single file or zip).
+
+Apps: check out `v2.1.0`, then
+- `"local-server"` apps: set `downloadName`. The single file is now published
+  and gated (axe, console, update check), so it must open cleanly from `file://`:
+  hide or disable what needs a real origin and say it needs *Download local
+  server* or the site — never a console error.
+- drop links to `public/<id>-cli.js` (point to the zip) and any use of
+  `site.distribution`;
+- apps with `"cli"`: pin `deno = "2.9.8"` in `mise.toml` (the gate runs the zip);
+- apps in a language other than `en`/`fr`: add the new platform strings;
+- rebuild `public/`.
+
 ## 2.0.1 — 2026-11-10
 
 Fixed
