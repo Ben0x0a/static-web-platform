@@ -21,6 +21,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools"))
 from swp_tools.assemble import config_js, headers_file, inline_css, inline_js  # noqa: E402
 from swp_tools.config import (Project, expand_net_origins_from, load_project, validate_net_origins,  # noqa: E402
                               validate_support)
+from swp_tools.credentials import check_secrets, find_secrets  # noqa: E402
 from swp_tools.package import LAUNCH_COMMAND, PORT_BLOCK, cli_command, default_port, local_zip  # noqa: E402
 from swp_tools.cors import ORIGIN_NULL, check_cors, copy_origins  # noqa: E402
 from swp_tools.csp import build_csp  # noqa: E402
@@ -127,6 +128,10 @@ class SiteValidationTest(unittest.TestCase):
         with self.assertRaises(SystemExit) as caught:
             load_project(make_app(site, files))
         self.assertIn(message, str(caught.exception))
+
+    def test_unknown_keys_are_rejected(self):
+        # A typo must not silently fall back to the default.
+        self.assert_rejected({**SITE_JSON, "distrbution": "local-server"}, "unknown keys distrbution")
 
     def test_distribution_values(self):
         for distribution in ("single", "local-server", "site-only"):
@@ -412,3 +417,33 @@ class InlineTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CredentialsTest(unittest.TestCase):
+    """Everything published is public: credentials stop the build."""
+    # Built from pieces so this file holds no token-shaped string itself.
+    SAMPLES = {
+        "private key": "-----BEGIN " + "RSA PRIVATE KEY-----",
+        "AWS access key": "AKIA" + "Q" * 16,
+        "GitHub token": "ghp" + "_" + "a1" * 18,
+        "Google API key": "AIza" + "b" * 35,
+        "Stripe secret key": "sk" + "_live_" + "c" * 24,
+        "Slack token": "xox" + "b-" + "1" * 12,
+        "OpenAI / Anthropic key": "sk" + "-ant-" + "d" * 24,
+    }
+
+    def test_each_kind_is_found_and_masked(self):
+        for kind, sample in self.SAMPLES.items():
+            hits = find_secrets({"app.js": f'const k = "{sample}";'.encode()})
+            self.assertEqual(len(hits), 1, kind)
+            self.assertIn(f"app.js: {kind}", hits[0])
+            self.assertNotIn(sample, hits[0])            # never printed in full
+
+    def test_ordinary_code_passes(self):
+        code = b'const task = "desk-top"; const id = "AKIA-docs"; fetch("https://api.example/v1?sk_test_x");'
+        self.assertEqual(find_secrets({"app.js": code}), [])
+
+    def test_check_stops_the_build(self):
+        with self.assertRaises(SystemExit) as caught:
+            check_secrets({"app-local.zip: app-cli.js": self.SAMPLES["AWS access key"].encode()})
+        self.assertIn("app-local.zip: app-cli.js: AWS access key", str(caught.exception))

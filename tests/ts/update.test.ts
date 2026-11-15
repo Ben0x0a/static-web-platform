@@ -36,6 +36,13 @@ test("a kind of copy the site no longer offers: no file, the link opens the site
                    [null, "https://app.example/"]);
 });
 
+test("version.json cannot send the copy to another site", async () => {
+  for (const download of ["https://evil.example/app.html", "//evil.example/app.html"]) {
+    const result = await checkForUpdate(site("single"), serving({ ...INFO, download }));
+    assert.equal(result.kind, "failed", download);
+  }
+});
+
 test("same version: up to date; consent refused: declined", async () => {
   assert.equal((await checkForUpdate(site("single", "new"), serving(INFO))).kind, "up-to-date");
   assert.equal((await checkForUpdate(site("single"), serving(null))).kind, "declined");

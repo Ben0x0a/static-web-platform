@@ -75,7 +75,7 @@ release, and installs it through npm from that folder:
 
 ```bash
 git submodule add https://github.com/<owner>/static-web-platform.git platform
-git -C platform checkout v2.1.0
+git -C platform checkout v2.2.0
 ```
 ```jsonc
 // package.json of the app
@@ -143,6 +143,8 @@ Accessibility / status; ids `#install`, `#download`, `#download-local`,
 keeps focused elements visible below it).
 
 ### `src/site.json`
+Unknown keys are an error (a typo would otherwise fall back to a default).
+
 | Key | Meaning |
 |---|---|
 | `id`, `title`, `shortName`, `lang`, `themeColor` | identity (storage prefix, manifest, `<title>`) |
@@ -239,7 +241,7 @@ From the app's root, with Node on PATH (`mise exec -- …`):
 
 | Command | Does |
 |---|---|
-| `npx swp build` | architecture check, type check (+ `core/`, `api/`, `cli/` purity), bundle, assemble `public/` |
+| `npx swp build` | architecture check, type check (+ `core/`, `api/`, `cli/` purity), bundle, credential scan of everything published (refuses keys, before `public/` is touched), assemble `public/` |
 | `npx swp build --dev` | only `config.js` + `base.css` for a dev server |
 | `npx swp check` | `public/` is up to date with `src/` (no Node needed) |
 | `npx swp verify` | `public/` is byte-for-byte a fresh rebuild |

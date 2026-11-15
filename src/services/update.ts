@@ -27,7 +27,13 @@ export async function checkForUpdate(site: SiteConfig<unknown>, net: Network): P
     if (!isUpdateAvailable(site.version, info)) return { kind: "up-to-date" };
     // A local-server copy is replaced by a new zip, a single file by a new single file.
     const file = (site.mode === "local" ? info.local?.file : info.download) ?? null;
-    return { kind: "available", info, file, downloadUrl: new URL(file ?? "./", site.siteUrl).href };
+    const downloadUrl = new URL(file ?? "./", site.siteUrl);
+    // Invariant: version.json is data from the network, not truth — the link
+    // it yields must stay on the site this copy came from.
+    if (downloadUrl.origin !== new URL(site.siteUrl).origin) {
+      return { kind: "failed", reason: `version.json points outside the site: ${downloadUrl.href}` };
+    }
+    return { kind: "available", info, file, downloadUrl: downloadUrl.href };
   } catch (err) {
     // Offline, or the browser blocks file:// → https: the copy keeps working.
     return { kind: "failed", reason: (err as Error).message };

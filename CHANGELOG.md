@@ -4,6 +4,26 @@ All notable changes to static-web-platform. Versions follow semantic versioning:
 a breaking change to the public API (`src/index.ts`), the page contract or the
 app build contract is a major version.
 
+## 2.2.0 — 2026-11-15
+
+Added
+- `swp build` refuses to publish credentials: the site, the single file, the zip
+  and the CLI are scanned for common key formats (private keys, AWS, GitHub,
+  Google API, Stripe live, Slack, OpenAI/Anthropic) before `public/` is touched;
+  the error names file and kind, never the key. Everything published is public,
+  including variables a bundler inlines (`VITE_*`): use keyless services only.
+
+Changed
+- Unknown `site.json` keys are an error (a typo such as `"distrbution"` used to
+  fall back silently to the default).
+
+Fixed
+- The update check accepts only a download link on the copy's own site: a
+  `version.json` pointing elsewhere is reported as "could not check".
+
+Apps: check out `v2.2.0` and rebuild `public/`; remove any unknown `site.json` key
+the build reports.
+
 ## 2.1.0 — 2026-11-15
 
 A minor version despite the breaking changes below: no 2.0.x app or local copy

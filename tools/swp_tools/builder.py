@@ -2,7 +2,7 @@
 
 Defines : build(), build_dev(), check(), verify().
 Used by : cli.py (`swp build|check|verify`), gate.py (fresh test builds).
-Uses    : config, version, bundle, assemble, package.
+Uses    : config, version, bundle, assemble, package, credentials.
 
 Outputs in public/: index.html + config.js + app.js + base.css (+ app.css) +
 sw.js + manifest.webmanifest + _headers + icons/ (hosted site); the local
@@ -25,6 +25,7 @@ from swp_tools.assemble import (VERSION_FILENAME, config_js, headers_file, manif
 from swp_tools.arch import check_architecture
 from swp_tools.bundle import AppBundle, bundle_app, bundle_cli, bundle_launcher, check_node, typecheck
 from swp_tools.config import Project, load_project
+from swp_tools.credentials import check_secrets
 from swp_tools.data import check_datasets, resolve_assets
 from swp_tools.package import local_zip
 from swp_tools.version import source_version
@@ -89,7 +90,6 @@ def build(project: Project, out: pathlib.Path, date: str | None = None) -> None:
         # version.json) or an empty one — a wrong --out must never delete data.
         if any(out.iterdir()) and not (out / VERSION_FILENAME).is_file():
             raise SystemExit(f"Refusing to overwrite {out}: not a build output (no {VERSION_FILENAME})")
-        shutil.rmtree(out)
 
     shared = _shared_files(project, bundle, assets)
     files = {**shared, **_page_files(project, "site", bundle, version, date, assets)}
@@ -101,13 +101,22 @@ def build(project: Project, out: pathlib.Path, date: str | None = None) -> None:
     download = project.download_filename
     if download:
         files[download] = render_page(project, "single", bundle, version, date, assets).encode("utf-8")
-    for name, data in files.items():
-        (out / name).parent.mkdir(parents=True, exist_ok=True)
-        (out / name).write_bytes(data)
     zip_name = project.local_zip_filename
+    local: dict[str, bytes] = {}
+    cli = None
     if zip_name:
         local = {**shared, **_page_files(project, "local", bundle, version, date, assets)}
         cli = bundle_cli(project, version, date) if project.cli_entry is not None else None
+    # Invariant: nothing is wiped or written before the scan — a key must never
+    # reach public/, and a refused build leaves the previous one in place.
+    check_secrets({**files, **{f"{zip_name}: {name}": data for name, data in local.items()},
+                   **({f"{zip_name}: {project.cli_filename}": cli.encode("utf-8")} if cli else {})})
+    if out.exists():
+        shutil.rmtree(out)
+    for name, data in files.items():
+        (out / name).parent.mkdir(parents=True, exist_ok=True)
+        (out / name).write_bytes(data)
+    if zip_name:
         local_zip(project, local, bundle_launcher(project), cli, out / zip_name)
 
     download_sha = _sha256(out / download) if download else None

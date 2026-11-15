@@ -70,6 +70,11 @@ src/
      `platform.consent.request(origin)`.
    - Redirects are never followed: call the final server directly.
    - Check endpoints with `swp cors` (the single file sends `Origin: null`).
+   - **Keyless services only.** There is no server to hide a key behind: everything
+     published (page, single file, zip, CLI, including variables a bundler inlines
+     such as `VITE_*`) is public. `swp build` refuses common credential formats; a
+     key that was ever committed is leaked — rotate it.
+   - Data from the network is data, not truth: validate it before use.
 2. **No data in the address bar** or the page title. Results are shared only through
    `platform.share.offer()`, which warns and copies the link; incoming share data is
    validated in `core/`.

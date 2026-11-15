@@ -16,6 +16,8 @@ PLATFORM_PACKAGE_NAME = "static-web-platform"
 PLATFORM_CLI_ENTRY = PLATFORM_PACKAGE_NAME + "/cli"   # the command-line shell's only platform import
 SITE_FILENAME = "site.json"
 REQUIRED_SITE_KEYS = ("id", "title", "shortName", "lang", "themeColor", "siteUrl", "netOrigins", "options")
+OPTIONAL_SITE_KEYS = ("distribution", "downloadName", "cli", "entry", "linkCheck", "netOriginsFrom", "modes",
+                      "themeSwitch", "support", "assets", "precacheAssets", "workers", "appBuild", "typecheck")
 # The local copies (site.json "distribution"): the single HTML file; the single
 # file AND a zip with a local server (apps with features that need a real
 # origin: the file stays the simple choice, the zip is the full app); or none.
@@ -185,6 +187,11 @@ def load_project(root: pathlib.Path, site_url_override: str | None = None) -> Pr
     missing = [key for key in REQUIRED_SITE_KEYS if key not in site]
     if missing:
         raise SystemExit(f"{site_path}: missing keys {', '.join(missing)}")
+    # Invariant: an unknown key is an error, not ignored — a typo ("distrbution")
+    # would otherwise silently fall back to the default.
+    unknown = sorted(set(site) - set(REQUIRED_SITE_KEYS) - set(OPTIONAL_SITE_KEYS))
+    if unknown:
+        raise SystemExit(f"{site_path}: unknown keys {', '.join(unknown)} (see the platform README, site.json)")
     expand_net_origins_from(site, root, site_path)
     validate_net_origins(site["netOrigins"], site_path)
     validate_support(site.get("support"), site_path)
